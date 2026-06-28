@@ -1,0 +1,179 @@
+# Review package: b8837ac..c1da414
+
+## Commits
+c1da414 feat: 프론트엔드 스캐폴딩 및 API 클라이언트 추가
+
+## Files changed
+ frontend/index.html           |  5 +++++
+ frontend/package.json         | 23 +++++++++++++++++++++++
+ frontend/src/App.tsx          |  3 +++
+ frontend/src/api/client.ts    | 25 +++++++++++++++++++++++++
+ frontend/src/main.tsx         |  4 ++++
+ frontend/src/types.ts         | 14 ++++++++++++++
+ frontend/tests/client.test.ts | 22 ++++++++++++++++++++++
+ frontend/tsconfig.json        |  8 ++++++++
+ frontend/vite.config.ts       |  3 +++
+ 9 files changed, 107 insertions(+)
+
+## Diff
+diff --git a/frontend/index.html b/frontend/index.html
+new file mode 100644
+index 0000000..08a0cbc
+--- /dev/null
++++ b/frontend/index.html
+@@ -0,0 +1,5 @@
++<!doctype html>
++<html lang="ko">
++  <head><meta charset="UTF-8" /><title>YT 라이브 스케쥴러</title></head>
++  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
++</html>
+diff --git a/frontend/package.json b/frontend/package.json
+new file mode 100644
+index 0000000..980ed98
+--- /dev/null
++++ b/frontend/package.json
+@@ -0,0 +1,23 @@
++{
++  "name": "yt-scheduler-frontend",
++  "private": true,
++  "type": "module",
++  "scripts": {
++    "dev": "vite",
++    "build": "tsc && vite build",
++    "test": "vitest run"
++  },
++  "dependencies": {
++    "react": "^18.3.1",
++    "react-dom": "^18.3.1",
++    "react-router-dom": "^6.26.0"
++  },
++  "devDependencies": {
++    "@types/react": "^18.3.3",
++    "@types/react-dom": "^18.3.0",
++    "@vitejs/plugin-react": "^4.3.1",
++    "typescript": "^5.5.0",
++    "vite": "^5.4.0",
++    "vitest": "^2.0.0"
++  }
++}
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+new file mode 100644
+index 0000000..ecc8712
+--- /dev/null
++++ b/frontend/src/App.tsx
+@@ -0,0 +1,3 @@
++export default function App() {
++  return <div><h1>YT 라이브 스케쥴러</h1></div>;
++}
+diff --git a/frontend/src/api/client.ts b/frontend/src/api/client.ts
+new file mode 100644
+index 0000000..0ad9799
+--- /dev/null
++++ b/frontend/src/api/client.ts
+@@ -0,0 +1,25 @@
++import type { Broadcast, Scene, Schedule, Status } from "../types";
++const BASE = "http://localhost:8000";
++
++async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
++  const res = await fetch(BASE + path, {
++    headers: { "Content-Type": "application/json" }, ...opts });
++  if (!res.ok) throw new Error(`${res.status} ${path}`);
++  return res.json();
++}
++
++export const api = {
++  listBroadcasts: () => req<Broadcast[]>("/broadcasts"),
++  createBroadcast: (data: Partial<Broadcast>) =>
++    req<Broadcast>("/broadcasts", { method: "POST", body: JSON.stringify(data) }),
++  createYoutubeEvent: (id: number) =>
++    req<Broadcast>(`/broadcasts/${id}/youtube`, { method: "POST" }),
++  listScenes: () => req<Scene[]>("/scenes"),
++  syncScenes: () => req<{ ok: boolean }>("/scenes/sync", { method: "POST" }),
++  listSchedules: () => req<Schedule[]>("/schedules"),
++  createSchedule: (data: any) =>
++    req<Schedule>("/schedules", { method: "POST", body: JSON.stringify(data) }),
++  deleteSchedule: (id: number) =>
++    req<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),
++  getStatus: () => req<Status>("/status"),
++};
+diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx
+new file mode 100644
+index 0000000..9a8cdbf
+--- /dev/null
++++ b/frontend/src/main.tsx
+@@ -0,0 +1,4 @@
++import React from "react";
++import { createRoot } from "react-dom/client";
++import App from "./App";
++createRoot(document.getElementById("root")!).render(<App />);
+diff --git a/frontend/src/types.ts b/frontend/src/types.ts
+new file mode 100644
+index 0000000..9e56c44
+--- /dev/null
++++ b/frontend/src/types.ts
+@@ -0,0 +1,14 @@
++export interface Broadcast {
++  id: number; title: string; description: string; privacy: string;
++  youtube_broadcast_id: string | null; status: string;
++}
++export interface Scene { id: number; name: string; obs_scene_name: string; note: string; }
++export interface SequenceItem { scene_id: number; order_index: number; duration_seconds: number | null; }
++export interface Schedule {
++  id: number; broadcast_id: number; start_at: string; end_at: string;
++  recurrence: string; status: string;
++}
++export interface Status {
++  obs_connected: boolean; youtube_authed: boolean;
++  next_schedule: { id: number; start_at: string } | null; live: boolean;
++}
+diff --git a/frontend/tests/client.test.ts b/frontend/tests/client.test.ts
+new file mode 100644
+index 0000000..dd3ad80
+--- /dev/null
++++ b/frontend/tests/client.test.ts
+@@ -0,0 +1,22 @@
++import { describe, it, expect, vi, beforeEach } from "vitest";
++import { api } from "../src/api/client";
++
++beforeEach(() => {
++  global.fetch = vi.fn(async () =>
++    ({ ok: true, json: async () => [{ id: 1, title: "t" }] }) as Response);
++});
++
++describe("api client", () => {
++  it("listBroadcasts hits /broadcasts", async () => {
++    const data = await api.listBroadcasts();
++    expect(global.fetch).toHaveBeenCalledWith(
++      "http://localhost:8000/broadcasts", expect.any(Object));
++    expect(data[0].id).toBe(1);
++  });
++  it("createSchedule POSTs JSON", async () => {
++    await api.createSchedule({ broadcast_id: 1, start_at: "x", end_at: "y",
++      recurrence: "none", recurrence_rule: null, items: [] } as any);
++    const call = (global.fetch as any).mock.calls.at(-1);
++    expect(call[1].method).toBe("POST");
++  });
++});
+diff --git a/frontend/tsconfig.json b/frontend/tsconfig.json
+new file mode 100644
+index 0000000..d3a9668
+--- /dev/null
++++ b/frontend/tsconfig.json
+@@ -0,0 +1,8 @@
++{
++  "compilerOptions": {
++    "target": "ES2020", "module": "ESNext", "moduleResolution": "bundler",
++    "jsx": "react-jsx", "strict": true, "esModuleInterop": true,
++    "skipLibCheck": true, "lib": ["ES2020", "DOM", "DOM.Iterable"]
++  },
++  "include": ["src", "tests"]
++}
+diff --git a/frontend/vite.config.ts b/frontend/vite.config.ts
+new file mode 100644
+index 0000000..e8f77bd
+--- /dev/null
++++ b/frontend/vite.config.ts
+@@ -0,0 +1,3 @@
++import { defineConfig } from "vite";
++import react from "@vitejs/plugin-react";
++export default defineConfig({ plugins: [react()], server: { port: 5173 } });

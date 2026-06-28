@@ -1,0 +1,211 @@
+# Review package: 2d84b1d..5339ab9
+
+## Commits
+5339ab9 feat: 방송 시작/종료 실행 단계 함수 추가
+
+## Files changed
+ backend/app/crud.py            | 23 +++++++++++
+ backend/app/scheduler/steps.py | 71 ++++++++++++++++++++++++++++++++++
+ backend/tests/test_steps.py    | 87 ++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 181 insertions(+)
+
+## Diff
+diff --git a/backend/app/crud.py b/backend/app/crud.py
+new file mode 100644
+index 0000000..d44867b
+--- /dev/null
++++ b/backend/app/crud.py
+@@ -0,0 +1,23 @@
++from app.models import RunLog, Broadcast, Schedule
++
++
++def log_run(db, schedule_id, event, detail=""):
++    """Log a run event for a schedule."""
++    entry = RunLog(schedule_id=schedule_id, event=event, detail=detail)
++    db.add(entry)
++    db.commit()
++    return entry
++
++
++def set_broadcast_status(db, broadcast_id, status):
++    """Set the status of a broadcast."""
++    b = db.get(Broadcast, broadcast_id)
++    b.status = status
++    db.commit()
++
++
++def set_schedule_status(db, schedule_id, status):
++    """Set the status of a schedule."""
++    s = db.get(Schedule, schedule_id)
++    s.status = status
++    db.commit()
+diff --git a/backend/app/scheduler/steps.py b/backend/app/scheduler/steps.py
+new file mode 100644
+index 0000000..1274d18
+--- /dev/null
++++ b/backend/app/scheduler/steps.py
+@@ -0,0 +1,71 @@
++from app import crud
++
++# YouTube standard RTMP. Stream creation returns an ingestion_url that should
++# ideally be stored in broadcast, but in this stage we use broadcast.youtube_stream_key
++# and the standard YouTube RTMP URL.
++DEFAULT_RTMP = "rtmp://a.rtmp.youtube.com/live2"
++
++
++def go_live(db, obs, yt, schedule):
++    """Execute the full startup sequence for a live broadcast.
++
++    Order:
++    1. YouTube transition to live
++    2. Set stream key in OBS
++    3. Start OBS stream
++    4. Switch to first scene
++    5. Update broadcast and schedule status
++
++    On exception, sets broadcast status to 'error', logs, and re-raises.
++    """
++    b = schedule.broadcast
++    try:
++        crud.log_run(db, schedule.id, "go_live_start")
++        yt.transition(b.youtube_broadcast_id, "live")
++        obs.set_stream_key(DEFAULT_RTMP, b.youtube_stream_key)
++        obs.start_stream()
++        switch_to_item(obs, schedule, 0)
++        crud.set_broadcast_status(db, b.id, "live")
++        crud.set_schedule_status(db, schedule.id, "running")
++        crud.log_run(db, schedule.id, "go_live_done")
++    except Exception as e:
++        crud.set_broadcast_status(db, b.id, "error")
++        crud.log_run(db, schedule.id, "go_live_error", str(e))
++        raise
++
++
++def switch_to_item(obs, schedule, index):
++    """Switch OBS scene to the scene of the sequence item at the given index.
++
++    Silently returns if index is out of bounds.
++    """
++    items = schedule.items
++    if index < 0 or index >= len(items):
++        return
++    obs.switch_scene(items[index].scene.obs_scene_name)
++
++
++def go_complete(db, obs, yt, schedule):
++    """Execute the complete sequence for ending a live broadcast.
++
++    Order:
++    1. Stop OBS stream (with finally block to ensure YouTube transition happens)
++    2. YouTube transition to complete
++    3. Update broadcast and schedule status
++
++    On exception, sets broadcast status to 'error', logs, and re-raises.
++    """
++    b = schedule.broadcast
++    try:
++        crud.log_run(db, schedule.id, "go_complete_start")
++        try:
++            obs.stop_stream()
++        finally:
++            yt.transition(b.youtube_broadcast_id, "complete")
++        crud.set_broadcast_status(db, b.id, "completed")
++        crud.set_schedule_status(db, schedule.id, "done")
++        crud.log_run(db, schedule.id, "go_complete_done")
++    except Exception as e:
++        crud.set_broadcast_status(db, b.id, "error")
++        crud.log_run(db, schedule.id, "go_complete_error", str(e))
++        raise
+diff --git a/backend/tests/test_steps.py b/backend/tests/test_steps.py
+new file mode 100644
+index 0000000..f43cbab
+--- /dev/null
++++ b/backend/tests/test_steps.py
+@@ -0,0 +1,87 @@
++from datetime import datetime, timezone
++from unittest.mock import MagicMock
++from app.models import Broadcast, Schedule, Scene, SequenceItem
++from app.scheduler import steps
++
++
++def _seed(db):
++    """Create test data: broadcast, schedule, scene, and sequence item."""
++    b = Broadcast(
++        title="t",
++        privacy="private",
++        status="scheduled",
++        youtube_broadcast_id="bc1",
++        youtube_stream_key="key1"
++    )
++    db.add(b)
++    db.commit()
++
++    s = Schedule(
++        broadcast_id=b.id,
++        start_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
++        end_at=datetime(2026, 7, 1, 1, tzinfo=timezone.utc),
++        recurrence="none",
++        status="pending"
++    )
++    db.add(s)
++    db.commit()
++
++    sc = Scene(name="메인", obs_scene_name="Main")
++    db.add(sc)
++    db.commit()
++
++    db.add(SequenceItem(
++        schedule_id=s.id,
++        scene_id=sc.id,
++        order_index=0,
++        duration_seconds=None
++    ))
++    db.commit()
++
++    return b, s
++
++
++def test_go_live_runs_full_sequence(db):
++    """Test that go_live runs the full startup sequence in correct order."""
++    b, s = _seed(db)
++    obs, yt = MagicMock(), MagicMock()
++    s.broadcast.youtube_stream_key = "key1"
++
++    steps.go_live(db, obs, yt, s)
++
++    yt.transition.assert_called_with("bc1", "live")
++    obs.set_stream_key.assert_called_once()
++    obs.start_stream.assert_called_once()
++    obs.switch_scene.assert_called_with("Main")
++
++    db.refresh(b)
++    assert b.status == "live"
++
++
++def test_go_complete_stops_and_completes(db):
++    """Test that go_complete stops the stream and transitions to complete."""
++    b, s = _seed(db)
++    obs, yt = MagicMock(), MagicMock()
++
++    steps.go_complete(db, obs, yt, s)
++
++    obs.stop_stream.assert_called_once()
++    yt.transition.assert_called_with("bc1", "complete")
++
++    db.refresh(b)
++    assert b.status == "completed"
++
++
++def test_go_live_error_sets_error_status(db):
++    """Test that go_live sets error status and re-raises on exception."""
++    b, s = _seed(db)
++    obs, yt = MagicMock(), MagicMock()
++    obs.start_stream.side_effect = RuntimeError("OBS 연결 실패")
++
++    try:
++        steps.go_live(db, obs, yt, s)
++    except RuntimeError:
++        pass
++
++    db.refresh(b)
++    assert b.status == "error"

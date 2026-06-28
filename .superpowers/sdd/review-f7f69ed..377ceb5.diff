@@ -1,0 +1,55 @@
+# Review package: f7f69ed..377ceb5
+
+## Commits
+377ceb5 feat: RRULE 다음 발생 시각 계산 추가
+
+## Files changed
+ backend/app/scheduler/__init__.py   |  0
+ backend/app/scheduler/recurrence.py | 15 +++++++++++++++
+ backend/tests/test_recurrence.py    | 13 +++++++++++++
+ 3 files changed, 28 insertions(+)
+
+## Diff
+diff --git a/backend/app/scheduler/__init__.py b/backend/app/scheduler/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/scheduler/recurrence.py b/backend/app/scheduler/recurrence.py
+new file mode 100644
+index 0000000..becb1db
+--- /dev/null
++++ b/backend/app/scheduler/recurrence.py
+@@ -0,0 +1,15 @@
++from datetime import datetime, timezone
++from dateutil import rrule as _rrule
++
++def next_occurrence(rrule: str | None, after: datetime) -> datetime | None:
++    if not rrule:
++        return None
++    if after.tzinfo is None:
++        after = after.replace(tzinfo=timezone.utc)
++    rs = _rrule.rrulestr(rrule, forceset=True)
++    nxt = rs.after(after, inc=False)
++    if nxt is None:
++        return None
++    if nxt.tzinfo is None:
++        nxt = nxt.replace(tzinfo=timezone.utc)
++    return nxt.astimezone(timezone.utc)
+diff --git a/backend/tests/test_recurrence.py b/backend/tests/test_recurrence.py
+new file mode 100644
+index 0000000..853fee9
+--- /dev/null
++++ b/backend/tests/test_recurrence.py
+@@ -0,0 +1,13 @@
++from datetime import datetime, timezone
++from app.scheduler.recurrence import next_occurrence
++
++def test_none_rule_returns_none():
++    assert next_occurrence(None, datetime(2026,7,1,tzinfo=timezone.utc)) is None
++    assert next_occurrence("", datetime(2026,7,1,tzinfo=timezone.utc)) is None
++
++def test_weekly_rule_next_monday():
++    # 2026-07-01 수요일 기준, 매주 월요일 09:00 UTC
++    rule = "DTSTART:20260629T090000Z\nRRULE:FREQ=WEEKLY;BYDAY=MO"
++    after = datetime(2026, 7, 1, 0, 0, tzinfo=timezone.utc)
++    nxt = next_occurrence(rule, after)
++    assert nxt == datetime(2026, 7, 6, 9, 0, tzinfo=timezone.utc)

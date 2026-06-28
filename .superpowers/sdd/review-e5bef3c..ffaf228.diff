@@ -1,0 +1,244 @@
+# Review package: e5bef3c..ffaf228
+
+## Commits
+ffaf228 feat: broadcasts/scenes/schedules REST API 추가
+
+## Files changed
+ backend/app/main.py               | 18 +++++++++++
+ backend/app/routers/__init__.py   |  0
+ backend/app/routers/broadcasts.py | 15 +++++++++
+ backend/app/routers/scenes.py     | 15 +++++++++
+ backend/app/routers/schedules.py  | 33 ++++++++++++++++++++
+ backend/app/schemas.py            | 44 +++++++++++++++++++++++++++
+ backend/tests/test_api_crud.py    | 64 +++++++++++++++++++++++++++++++++++++++
+ 7 files changed, 189 insertions(+)
+
+## Diff
+diff --git a/backend/app/main.py b/backend/app/main.py
+new file mode 100644
+index 0000000..49b926b
+--- /dev/null
++++ b/backend/app/main.py
+@@ -0,0 +1,18 @@
++from fastapi import FastAPI, Depends
++from app.db import SessionLocal
++
++app = FastAPI(title="YT Livestream Scheduler")
++
++def get_db():
++    db = SessionLocal()
++    try: yield db
++    finally: db.close()
++
++# 실제 ScheduleEngine은 lifespan에서 구성. 기본 의존성은 앱 상태에서 가져옴.
++def get_engine_dep():
++    return app.state.engine
++
++from app.routers import broadcasts, scenes, schedules  # noqa: E402
++app.include_router(broadcasts.router)
++app.include_router(scenes.router)
++app.include_router(schedules.router)
+diff --git a/backend/app/routers/__init__.py b/backend/app/routers/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/routers/broadcasts.py b/backend/app/routers/broadcasts.py
+new file mode 100644
+index 0000000..dba12e4
+--- /dev/null
++++ b/backend/app/routers/broadcasts.py
+@@ -0,0 +1,15 @@
++from fastapi import APIRouter, Depends
++from app.main import get_db
++from app import schemas
++from app.models import Broadcast
++
++router = APIRouter(prefix="/broadcasts", tags=["broadcasts"])
++
++@router.post("", response_model=schemas.BroadcastOut)
++def create_broadcast(payload: schemas.BroadcastCreate, db=Depends(get_db)):
++    b = Broadcast(**payload.model_dump()); db.add(b); db.commit(); db.refresh(b)
++    return b
++
++@router.get("", response_model=list[schemas.BroadcastOut])
++def list_broadcasts(db=Depends(get_db)):
++    return db.query(Broadcast).all()
+diff --git a/backend/app/routers/scenes.py b/backend/app/routers/scenes.py
+new file mode 100644
+index 0000000..2379889
+--- /dev/null
++++ b/backend/app/routers/scenes.py
+@@ -0,0 +1,15 @@
++from fastapi import APIRouter, Depends
++from app.main import get_db
++from app import schemas
++from app.models import Scene
++
++router = APIRouter(prefix="/scenes", tags=["scenes"])
++
++@router.post("", response_model=schemas.SceneOut)
++def create_scene(payload: schemas.SceneCreate, db=Depends(get_db)):
++    s = Scene(**payload.model_dump()); db.add(s); db.commit(); db.refresh(s)
++    return s
++
++@router.get("", response_model=list[schemas.SceneOut])
++def list_scenes(db=Depends(get_db)):
++    return db.query(Scene).all()
+diff --git a/backend/app/routers/schedules.py b/backend/app/routers/schedules.py
+new file mode 100644
+index 0000000..08bc238
+--- /dev/null
++++ b/backend/app/routers/schedules.py
+@@ -0,0 +1,33 @@
++from fastapi import APIRouter, Depends, HTTPException
++from app.main import get_db, get_engine_dep
++from app import schemas
++from app.models import Schedule, SequenceItem
++
++router = APIRouter(prefix="/schedules", tags=["schedules"])
++
++@router.post("", response_model=schemas.ScheduleOut)
++def create_schedule(payload: schemas.ScheduleCreate, db=Depends(get_db),
++                    engine=Depends(get_engine_dep)):
++    s = Schedule(broadcast_id=payload.broadcast_id, start_at=payload.start_at,
++                 end_at=payload.end_at, recurrence=payload.recurrence,
++                 recurrence_rule=payload.recurrence_rule, status="pending")
++    db.add(s); db.commit(); db.refresh(s)
++    for item in payload.items:
++        db.add(SequenceItem(schedule_id=s.id, scene_id=item.scene_id,
++                            order_index=item.order_index,
++                            duration_seconds=item.duration_seconds))
++    db.commit()
++    engine.register(s.id)
++    return s
++
++@router.get("", response_model=list[schemas.ScheduleOut])
++def list_schedules(db=Depends(get_db)):
++    return db.query(Schedule).all()
++
++@router.delete("/{schedule_id}")
++def delete_schedule(schedule_id: int, db=Depends(get_db),
++                    engine=Depends(get_engine_dep)):
++    s = db.get(Schedule, schedule_id)
++    if not s: raise HTTPException(404)
++    engine.cancel(schedule_id)
++    return {"ok": True}
+diff --git a/backend/app/schemas.py b/backend/app/schemas.py
+new file mode 100644
+index 0000000..8280093
+--- /dev/null
++++ b/backend/app/schemas.py
+@@ -0,0 +1,44 @@
++from datetime import datetime
++from pydantic import BaseModel
++
++class BroadcastCreate(BaseModel):
++    title: str
++    description: str = ""
++    privacy: str = "private"
++
++class BroadcastOut(BroadcastCreate):
++    id: int
++    youtube_broadcast_id: str | None = None
++    status: str
++    class Config: from_attributes = True
++
++class SceneCreate(BaseModel):
++    name: str
++    obs_scene_name: str
++    note: str = ""
++
++class SceneOut(SceneCreate):
++    id: int
++    class Config: from_attributes = True
++
++class SequenceItemIn(BaseModel):
++    scene_id: int
++    order_index: int
++    duration_seconds: int | None = None
++
++class ScheduleCreate(BaseModel):
++    broadcast_id: int
++    start_at: datetime
++    end_at: datetime
++    recurrence: str = "none"
++    recurrence_rule: str | None = None
++    items: list[SequenceItemIn] = []
++
++class ScheduleOut(BaseModel):
++    id: int
++    broadcast_id: int
++    start_at: datetime
++    end_at: datetime
++    recurrence: str
++    status: str
++    class Config: from_attributes = True
+diff --git a/backend/tests/test_api_crud.py b/backend/tests/test_api_crud.py
+new file mode 100644
+index 0000000..7312a85
+--- /dev/null
++++ b/backend/tests/test_api_crud.py
+@@ -0,0 +1,64 @@
++import pytest
++from fastapi.testclient import TestClient
++from sqlalchemy import create_engine
++from sqlalchemy.pool import StaticPool
++from sqlalchemy.orm import sessionmaker
++from app.db import Base
++from app.main import app, get_db, get_engine_dep
++from unittest.mock import MagicMock
++
++@pytest.fixture
++def client():
++    engine = create_engine(
++        "sqlite:///:memory:",
++        connect_args={"check_same_thread": False},
++        poolclass=StaticPool,
++    )
++    Base.metadata.create_all(bind=engine)
++    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
++    def _get_db():
++        db = TestingSessionLocal()
++        try: yield db
++        finally: db.close()
++    fake_engine = MagicMock()
++    app.dependency_overrides[get_db] = _get_db
++    app.dependency_overrides[get_engine_dep] = lambda: fake_engine
++    yield TestClient(app), fake_engine
++    app.dependency_overrides.clear()
++
++def test_create_and_list_broadcast(client):
++    c, _ = client
++    r = c.post("/broadcasts", json={"title": "내 방송", "privacy": "private"})
++    assert r.status_code == 200
++    assert r.json()["title"] == "내 방송"
++    assert c.get("/broadcasts").json()[0]["title"] == "내 방송"
++
++def test_create_scene(client):
++    c, _ = client
++    r = c.post("/scenes", json={"name": "메인", "obs_scene_name": "Main"})
++    assert r.status_code == 200
++    assert r.json()["obs_scene_name"] == "Main"
++
++def test_create_schedule_registers_engine(client):
++    c, eng = client
++    bid = c.post("/broadcasts", json={"title": "b"}).json()["id"]
++    sid_scene = c.post("/scenes", json={"name": "m", "obs_scene_name": "Main"}).json()["id"]
++    r = c.post("/schedules", json={
++        "broadcast_id": bid,
++        "start_at": "2026-07-01T09:00:00+00:00",
++        "end_at": "2026-07-01T10:00:00+00:00",
++        "recurrence": "none",
++        "items": [{"scene_id": sid_scene, "order_index": 0, "duration_seconds": None}],
++    })
++    assert r.status_code == 200
++    eng.register.assert_called_once()
++
++def test_delete_schedule_cancels(client):
++    c, eng = client
++    bid = c.post("/broadcasts", json={"title": "b"}).json()["id"]
++    sid = c.post("/schedules", json={
++        "broadcast_id": bid, "start_at": "2026-07-01T09:00:00+00:00",
++        "end_at": "2026-07-01T10:00:00+00:00", "items": []}).json()["id"]
++    r = c.delete(f"/schedules/{sid}")
++    assert r.status_code == 200
++    eng.cancel.assert_called_with(sid)

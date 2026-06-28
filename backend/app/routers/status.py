@@ -11,12 +11,14 @@ def status(db=Depends(get_db), obs=Depends(get_obs_dep)):
              .filter(Schedule.status == "pending")
              .order_by(Schedule.start_at).first())
     try:
-        obs_connected = obs.is_streaming() is not None
+        obs.is_streaming()
+        obs_connected = True
     except Exception:
         obs_connected = False
     return {
         "obs_connected": obs_connected,
         "youtube_authed": token is not None,
         "next_schedule": {"id": nxt.id, "start_at": nxt.start_at.isoformat()} if nxt else None,
-        "live": bool(token) and False,
+        # live: 실제 스트리밍 상태 연동은 후속(수동 E2E)에서 보강. 현재는 스텁.
+        "live": False,
     }

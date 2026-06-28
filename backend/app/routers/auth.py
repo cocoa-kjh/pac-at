@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+import json
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from google_auth_oauthlib.flow import Flow
@@ -40,7 +40,6 @@ def load_credentials(db) -> Credentials | None:
     token = db.query(OAuthToken).first()
     if not token or not token.refresh_token:
         return None
-    import json
     with open(settings.client_secret_path) as f:
         cfg = json.load(f)["web"]
     return Credentials(

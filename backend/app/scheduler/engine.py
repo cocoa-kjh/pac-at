@@ -35,15 +35,16 @@ class ScheduleEngine:
             if s.recurrence_rule:
                 nxt = next_occurrence(s.recurrence_rule, s.start_at)
                 if nxt:
-                    self._reschedule(s, nxt)
+                    self._reschedule(db, s, nxt)
         finally:
             db.close()
 
-    def _reschedule(self, schedule, new_start):
+    def _reschedule(self, db, schedule, new_start):
         duration = schedule.end_at - schedule.start_at
         schedule.start_at = new_start
         schedule.end_at = new_start + duration
         schedule.status = "pending"
+        db.commit()
         self.register(schedule.id)
 
     def register(self, schedule_id):

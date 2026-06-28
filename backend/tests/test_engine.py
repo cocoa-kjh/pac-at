@@ -28,6 +28,27 @@ def test_register_adds_live_and_complete_jobs(db):
     # 두 번째 item(인트로 60초 후)에 대한 전환 잡 존재
     assert f"sched:{s.id}:item:1" in job_ids
 
+def test_recurrence_reschedules_after_complete(db):
+    from app.db import SessionLocal
+    b = Broadcast(title="t", privacy="private", status="scheduled",
+                  youtube_broadcast_id="bc1", youtube_stream_key="k1"); db.add(b); db.commit()
+    start = datetime(2026,6,29,9,tzinfo=timezone.utc)  # 월요일
+    s = Schedule(broadcast_id=b.id, start_at=start, end_at=start+timedelta(hours=1),
+                 recurrence="weekly",
+                 recurrence_rule="DTSTART:20260629T090000Z\nRRULE:FREQ=WEEKLY;BYDAY=MO",
+                 status="pending"); db.add(s); db.commit()
+    sched = MagicMock()
+    eng = ScheduleEngine(sched, MagicMock(), MagicMock(), SessionLocal)
+    eng._run_go_complete(s.id)
+    db.refresh(s)
+    # SQLite strips tzinfo on storage; compare on naive value
+    got = s.start_at.replace(tzinfo=timezone.utc) if s.start_at.tzinfo is None else s.start_at
+    assert got == datetime(2026,7,6,9,tzinfo=timezone.utc)  # 다음 월요일
+    assert s.status == "pending"
+    # register가 새 시각으로 재호출되었는지 확인
+    job_ids = [c.kwargs.get("id") or c.args[2] for c in sched.add_job.call_args_list]
+    assert f"sched:{s.id}:live" in job_ids
+
 def test_cancel_removes_jobs_and_sets_status(db):
     from app.db import SessionLocal
     s = _seed_two_items(db)

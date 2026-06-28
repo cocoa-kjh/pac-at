@@ -12,6 +12,12 @@ def get_db():
 def get_engine_dep():
     return app.state.engine
 
+def get_youtube_dep():
+    return app.state.youtube
+
+def get_obs_dep():
+    return app.state.obs
+
 from app.routers import broadcasts, scenes, schedules  # noqa: E402
 app.include_router(broadcasts.router)
 app.include_router(scenes.router)

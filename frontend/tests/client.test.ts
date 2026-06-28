@@ -19,4 +19,22 @@ describe("api client", () => {
     const call = (global.fetch as any).mock.calls.at(-1);
     expect(call[1].method).toBe("POST");
   });
+  it("deleteSchedule uses DELETE", async () => {
+    await api.deleteSchedule(7);
+    const call = (global.fetch as any).mock.calls.at(-1);
+    expect(call[0]).toBe("http://localhost:8000/schedules/7");
+    expect(call[1].method).toBe("DELETE");
+  });
+  it("createBroadcast POSTs body", async () => {
+    await api.createBroadcast({ title: "방송" } as any);
+    const call = (global.fetch as any).mock.calls.at(-1);
+    expect(call[0]).toBe("http://localhost:8000/broadcasts");
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body).title).toBe("방송");
+  });
+  it("getStatus hits /status", async () => {
+    await api.getStatus();
+    const call = (global.fetch as any).mock.calls.at(-1);
+    expect(call[0]).toBe("http://localhost:8000/status");
+  });
 });

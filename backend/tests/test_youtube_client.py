@@ -27,4 +27,5 @@ def test_transition_calls_api():
     yt = MagicMock()
     client = YouTubeClient(yt)
     client.transition("bc123", "live")
-    yt.liveBroadcasts().transition.assert_called()
+    yt.liveBroadcasts().transition.assert_called_with(
+        broadcastStatus="live", id="bc123", part="id,status")

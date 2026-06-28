@@ -1,0 +1,30 @@
+# Secrets & credentials
+_doc/client_secret_*.json
+**/client_secret*.json
+*.env
+.env*
+*token*.json
+oauth_token*
+
+# SQLite database
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

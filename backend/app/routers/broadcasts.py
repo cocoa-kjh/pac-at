@@ -17,6 +17,7 @@ def list_broadcasts(db=Depends(get_db)):
 @router.post("/{broadcast_id}/youtube", response_model=schemas.BroadcastOut)
 def create_youtube_event(broadcast_id: int, db=Depends(get_db),
                          yt=Depends(get_youtube_dep)):
+    if yt is None: raise HTTPException(status_code=409, detail="YouTube not authenticated")
     b = db.get(Broadcast, broadcast_id)
     if not b: raise HTTPException(404)
     from datetime import datetime, timezone

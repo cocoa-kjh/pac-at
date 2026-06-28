@@ -30,4 +30,6 @@ def delete_schedule(schedule_id: int, db=Depends(get_db),
     s = db.get(Schedule, schedule_id)
     if not s: raise HTTPException(404)
     engine.cancel(schedule_id)
+    db.delete(s)
+    db.commit()
     return {"ok": True}

@@ -62,3 +62,4 @@ def test_delete_schedule_cancels(client):
     r = c.delete(f"/schedules/{sid}")
     assert r.status_code == 200
     eng.cancel.assert_called_with(sid)
+    assert c.get("/schedules").json() == []

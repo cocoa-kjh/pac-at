@@ -34,6 +34,8 @@ def youtube_callback(request: Request, db=Depends(get_db)):
     token.expiry = creds.expiry
     token.scopes = " ".join(creds.scopes or SCOPES)
     db.add(token); db.commit()
+    from app.main import _build_youtube_client
+    request.app.state.youtube = _build_youtube_client()
     return RedirectResponse("http://localhost:5173/")
 
 def load_credentials(db) -> Credentials | None:

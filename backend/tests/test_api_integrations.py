@@ -39,6 +39,15 @@ def test_create_youtube_event(client):
     assert body["status"] == "scheduled"
     yt.bind.assert_called_with("bc1", "st1")
 
+def test_youtube_event_409_when_unauthed(client):
+    c, yt, obs = client
+    app.dependency_overrides[get_youtube_dep] = lambda: None
+    bid = c.post("/broadcasts", json={"title": "방송"}).json()["id"]
+    r = c.post(f"/broadcasts/{bid}/youtube")
+    assert r.status_code == 409
+    # restore original override
+    app.dependency_overrides[get_youtube_dep] = lambda: yt
+
 def test_sync_scenes_from_obs(client):
     c, _, obs = client
     obs.list_scenes.return_value = ["Intro", "Main"]

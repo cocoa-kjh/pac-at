@@ -13,3 +13,8 @@ Task 7: complete (commits e5bef3c..ffaf228, review clean; legit deviation: Stati
 Task 8: complete (commits ffaf228..92400fa, review clean; 24 suite passing. Minors deferred: inline import in broadcasts.py, no 404 negative test, opaque sync response)
 Task 9: complete (commits 92400fa..b8837ac, review clean after cleanup; main.py lifespan rewrite preserves 4 deps, auth+status routers, 25 suite passing. live field is documented stub deferred to E2E)
 Task 10: complete (commits b8837ac..79b2ed0, review spec-PASS; added 3 client tests (5 passing). Declined as YAGNI for local tool: typed-error infra, Content-Type-on-GET change)
+Task 11: complete (commits 79b2ed0..5ef8472, review approved + fixed broken build; 5 pages+SequenceEditor+router, global->globalThis fixes tsc, 6 vitest passing, tsc 0 errors)
+Task 12: complete (commit 03bed93, docs only; README + .env.example (no real secrets), .gitignore allows *.env.example. Final: backend 25 + frontend 6 passing)
+
+FINAL REVIEW (opus, whole-branch): found Critical (YouTube 미인증 500 + 시작싱글톤) + Important (DELETE 소프트취소) + Minor (.env 미로드). ALL FIXED in 2b2af48 (26 passing): 409 guard + callback rebuild, hard-delete, dotenv load.
+BRANCH COMPLETE — 13 tasks done, backend 26 + frontend 6 passing, tsc 0 errors.

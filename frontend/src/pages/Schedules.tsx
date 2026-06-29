@@ -38,8 +38,21 @@ export default function Schedules() {
       <SequenceEditor value={items} onChange={setItems} scenes={scenes} />
       <button onClick={create}>스케쥴 생성</button>
       <ul>{schedules.map(s => (
-        <li key={s.id}>#{s.id} {s.start_at} — {s.status}
-          <button onClick={() => api.deleteSchedule(s.id).then(reload)}>취소</button>
+        <li key={s.id}>
+          #{s.id} {s.start_at} — <strong>{s.status}</strong>
+          {(s.status === "pending" || s.status === "error") && (
+            <button onClick={() => api.manualGoLive(s.id).then(reload).catch(e => alert(e.message))}>
+              지금 시작
+            </button>
+          )}
+          {s.status === "running" && (
+            <button onClick={() => api.manualGoComplete(s.id).then(reload).catch(e => alert(e.message))}>
+              지금 종료
+            </button>
+          )}
+          {s.status !== "running" && (
+            <button onClick={() => api.deleteSchedule(s.id).then(reload)}>취소</button>
+          )}
         </li>))}</ul>
     </div>);
 }

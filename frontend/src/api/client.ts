@@ -21,5 +21,9 @@ export const api = {
     req<Schedule>("/schedules", { method: "POST", body: JSON.stringify(data) }),
   deleteSchedule: (id: number) =>
     req<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),
+  manualGoLive: (id: number) =>
+    req<{ ok: boolean }>(`/schedules/${id}/go-live`, { method: "POST" }),
+  manualGoComplete: (id: number) =>
+    req<{ ok: boolean }>(`/schedules/${id}/go-complete`, { method: "POST" }),
   getStatus: () => req<Status>("/status"),
 };

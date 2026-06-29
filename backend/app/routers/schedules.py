@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
-from app.main import get_db, get_engine_dep
+from app.main import get_db, get_engine_dep, get_obs_dep, get_youtube_dep
 from app import schemas
 from app.models import Schedule, SequenceItem
+from app.scheduler import steps
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -23,6 +24,32 @@ def create_schedule(payload: schemas.ScheduleCreate, db=Depends(get_db),
 @router.get("", response_model=list[schemas.ScheduleOut])
 def list_schedules(db=Depends(get_db)):
     return db.query(Schedule).all()
+
+@router.post("/{schedule_id}/go-live")
+def manual_go_live(schedule_id: int, db=Depends(get_db),
+                   obs=Depends(get_obs_dep), yt=Depends(get_youtube_dep)):
+    s = db.get(Schedule, schedule_id)
+    if not s:
+        raise HTTPException(404, "schedule not found")
+    if s.status not in ("pending", "error"):
+        raise HTTPException(409, f"schedule status is '{s.status}', expected pending or error")
+    if yt is None:
+        raise HTTPException(409, "youtube not authenticated")
+    steps.go_live(db, obs, yt, s)
+    return {"ok": True}
+
+@router.post("/{schedule_id}/go-complete")
+def manual_go_complete(schedule_id: int, db=Depends(get_db),
+                       obs=Depends(get_obs_dep), yt=Depends(get_youtube_dep)):
+    s = db.get(Schedule, schedule_id)
+    if not s:
+        raise HTTPException(404, "schedule not found")
+    if s.status != "running":
+        raise HTTPException(409, f"schedule status is '{s.status}', expected running")
+    if yt is None:
+        raise HTTPException(409, "youtube not authenticated")
+    steps.go_complete(db, obs, yt, s)
+    return {"ok": True}
 
 @router.delete("/{schedule_id}")
 def delete_schedule(schedule_id: int, db=Depends(get_db),

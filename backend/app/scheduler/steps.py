@@ -1,22 +1,21 @@
 from app import crud
 
-# YouTube standard RTMP. Stream creation returns an ingestion_url that should
-# ideally be stored in broadcast, but in this stage we use broadcast.youtube_stream_key
-# and the standard YouTube RTMP URL.
+# YouTube 표준 RTMP 스트림 서버 주소
+# 스트림 생성 시 고유의 ingestion_url을 제공받지만, 여기서는 표준 유튜브 RTMP URL과 방송의 stream_key 조합을 사용합니다.
 DEFAULT_RTMP = "rtmp://a.rtmp.youtube.com/live2"
 
 
 def go_live(db, obs, yt, schedule):
-    """Execute the full startup sequence for a live broadcast.
+    """실시간 방송의 전체 시작 시퀀스를 처리합니다.
 
-    Order:
-    1. YouTube transition to live
-    2. Set stream key in OBS
-    3. Start OBS stream
-    4. Switch to first scene
-    5. Update broadcast and schedule status
+    실행 순서:
+    1. YouTube 방송 상태를 'live'(실시간)로 전환
+    2. OBS의 스트림 키 설정
+    3. OBS 방송 시작 (송출 개시)
+    4. 첫 번째 장면(index=0)으로 전환
+    5. DB 내 방송 및 스케줄 상태 업데이트 ('live', 'running')
 
-    On exception, sets broadcast status to 'error', logs, and re-raises.
+    오류가 발생하면 방송 상태를 'error'로 설정하고 로그를 남긴 후 예외를 다시 던집니다.
     """
     b = schedule.broadcast
     try:
@@ -35,9 +34,9 @@ def go_live(db, obs, yt, schedule):
 
 
 def switch_to_item(obs, schedule, index):
-    """Switch OBS scene to the scene of the sequence item at the given index.
+    """OBS 장면을 현재 스케줄의 특정 순서(index)에 정의된 OBS 장면 명으로 전환합니다.
 
-    Silently returns if index is out of bounds.
+    인덱스가 유효 범위를 벗어나면 아무것도 하지 않고 무시합니다.
     """
     items = schedule.items
     if index < 0 or index >= len(items):
@@ -46,14 +45,14 @@ def switch_to_item(obs, schedule, index):
 
 
 def go_complete(db, obs, yt, schedule):
-    """Execute the complete sequence for ending a live broadcast.
+    """실시간 방송의 전체 종료 시퀀스를 처리합니다.
 
-    Order:
-    1. Stop OBS stream (with finally block to ensure YouTube transition happens)
-    2. YouTube transition to complete
-    3. Update broadcast and schedule status
+    실행 순서:
+    1. OBS 방송 중단 (YouTube 상태 전환을 보장하기 위해 try/finally 사용)
+    2. YouTube 방송 상태를 'complete'(종료)로 전환
+    3. DB 내 방송 및 스케줄 상태 업데이트 ('completed', 'done')
 
-    On exception, sets broadcast status to 'error', logs, and re-raises.
+    오류가 발생하면 방송 상태를 'error'로 설정하고 로그를 남긴 후 예외를 다시 던집니다.
     """
     b = schedule.broadcast
     try:
@@ -61,6 +60,7 @@ def go_complete(db, obs, yt, schedule):
         try:
             obs.stop_stream()
         finally:
+            # OBS 송출 중단 실패 여부와 상관없이 유튜브 스트림은 반드시 complete 상태로 닫아줍니다.
             yt.transition(b.youtube_broadcast_id, "complete")
         crud.set_broadcast_status(db, b.id, "completed")
         crud.set_schedule_status(db, schedule.id, "done")
@@ -69,3 +69,4 @@ def go_complete(db, obs, yt, schedule):
         crud.set_broadcast_status(db, b.id, "error")
         crud.log_run(db, schedule.id, "go_complete_error", str(e))
         raise
+

@@ -1,0 +1,160 @@
+# Review package: ffaf228..92400fa
+
+## Commits
+92400fa feat: YouTube 이벤트 생성 및 OBS 씬 동기화 엔드포인트 추가
+
+## Files changed
+ backend/app/main.py                    |  6 +++++
+ backend/app/routers/broadcasts.py      | 20 ++++++++++++--
+ backend/app/routers/scenes.py          | 11 +++++++-
+ backend/tests/test_api_integrations.py | 48 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 82 insertions(+), 3 deletions(-)
+
+## Diff
+diff --git a/backend/app/main.py b/backend/app/main.py
+index 49b926b..142a5eb 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -5,14 +5,20 @@ app = FastAPI(title="YT Livestream Scheduler")
+ 
+ def get_db():
+     db = SessionLocal()
+     try: yield db
+     finally: db.close()
+ 
+ # 실제 ScheduleEngine은 lifespan에서 구성. 기본 의존성은 앱 상태에서 가져옴.
+ def get_engine_dep():
+     return app.state.engine
+ 
++def get_youtube_dep():
++    return app.state.youtube
++
++def get_obs_dep():
++    return app.state.obs
++
+ from app.routers import broadcasts, scenes, schedules  # noqa: E402
+ app.include_router(broadcasts.router)
+ app.include_router(scenes.router)
+ app.include_router(schedules.router)
+diff --git a/backend/app/routers/broadcasts.py b/backend/app/routers/broadcasts.py
+index dba12e4..b1f660f 100644
+--- a/backend/app/routers/broadcasts.py
++++ b/backend/app/routers/broadcasts.py
+@@ -1,15 +1,31 @@
+-from fastapi import APIRouter, Depends
+-from app.main import get_db
++from fastapi import APIRouter, Depends, HTTPException
++from app.main import get_db, get_youtube_dep
+ from app import schemas
+ from app.models import Broadcast
+ 
+ router = APIRouter(prefix="/broadcasts", tags=["broadcasts"])
+ 
+ @router.post("", response_model=schemas.BroadcastOut)
+ def create_broadcast(payload: schemas.BroadcastCreate, db=Depends(get_db)):
+     b = Broadcast(**payload.model_dump()); db.add(b); db.commit(); db.refresh(b)
+     return b
+ 
+ @router.get("", response_model=list[schemas.BroadcastOut])
+ def list_broadcasts(db=Depends(get_db)):
+     return db.query(Broadcast).all()
++
++@router.post("/{broadcast_id}/youtube", response_model=schemas.BroadcastOut)
++def create_youtube_event(broadcast_id: int, db=Depends(get_db),
++                         yt=Depends(get_youtube_dep)):
++    b = db.get(Broadcast, broadcast_id)
++    if not b: raise HTTPException(404)
++    from datetime import datetime, timezone
++    bid = yt.create_broadcast(b.title, b.description, b.privacy,
++                              datetime.now(timezone.utc))
++    stream_id, key, _url = yt.create_stream(f"{b.title} stream")
++    yt.bind(bid, stream_id)
++    b.youtube_broadcast_id = bid
++    b.youtube_stream_key = key
++    b.status = "scheduled"
++    db.commit(); db.refresh(b)
++    return b
+diff --git a/backend/app/routers/scenes.py b/backend/app/routers/scenes.py
+index 2379889..02ae2c8 100644
+--- a/backend/app/routers/scenes.py
++++ b/backend/app/routers/scenes.py
+@@ -1,15 +1,24 @@
+ from fastapi import APIRouter, Depends
+-from app.main import get_db
++from app.main import get_db, get_obs_dep
+ from app import schemas
+ from app.models import Scene
+ 
+ router = APIRouter(prefix="/scenes", tags=["scenes"])
+ 
+ @router.post("", response_model=schemas.SceneOut)
+ def create_scene(payload: schemas.SceneCreate, db=Depends(get_db)):
+     s = Scene(**payload.model_dump()); db.add(s); db.commit(); db.refresh(s)
+     return s
+ 
+ @router.get("", response_model=list[schemas.SceneOut])
+ def list_scenes(db=Depends(get_db)):
+     return db.query(Scene).all()
++
++@router.post("/sync")
++def sync_scenes(db=Depends(get_db), obs=Depends(get_obs_dep)):
++    existing = {s.obs_scene_name for s in db.query(Scene).all()}
++    for name in obs.list_scenes():
++        if name not in existing:
++            db.add(Scene(name=name, obs_scene_name=name))
++    db.commit()
++    return {"ok": True}
+diff --git a/backend/tests/test_api_integrations.py b/backend/tests/test_api_integrations.py
+new file mode 100644
+index 0000000..ebc6df7
+--- /dev/null
++++ b/backend/tests/test_api_integrations.py
+@@ -0,0 +1,48 @@
++import pytest
++from fastapi.testclient import TestClient
++from sqlalchemy import create_engine
++from sqlalchemy.pool import StaticPool
++from sqlalchemy.orm import sessionmaker
++from unittest.mock import MagicMock
++from app.db import Base
++from app.main import app, get_db, get_youtube_dep, get_obs_dep
++
++@pytest.fixture
++def client():
++    engine = create_engine(
++        "sqlite:///:memory:",
++        connect_args={"check_same_thread": False},
++        poolclass=StaticPool,
++    )
++    Base.metadata.create_all(bind=engine)
++    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
++    def _get_db():
++        db = TestingSessionLocal()
++        try: yield db
++        finally: db.close()
++    yt, obs = MagicMock(), MagicMock()
++    app.dependency_overrides[get_db] = _get_db
++    app.dependency_overrides[get_youtube_dep] = lambda: yt
++    app.dependency_overrides[get_obs_dep] = lambda: obs
++    yield TestClient(app), yt, obs
++    app.dependency_overrides.clear()
++
++def test_create_youtube_event(client):
++    c, yt, _ = client
++    yt.create_broadcast.return_value = "bc1"
++    yt.create_stream.return_value = ("st1", "key1", "rtmp://x")
++    bid = c.post("/broadcasts", json={"title": "방송"}).json()["id"]
++    r = c.post(f"/broadcasts/{bid}/youtube")
++    assert r.status_code == 200
++    body = r.json()
++    assert body["youtube_broadcast_id"] == "bc1"
++    assert body["status"] == "scheduled"
++    yt.bind.assert_called_with("bc1", "st1")
++
++def test_sync_scenes_from_obs(client):
++    c, _, obs = client
++    obs.list_scenes.return_value = ["Intro", "Main"]
++    r = c.post("/scenes/sync")
++    assert r.status_code == 200
++    names = {s["obs_scene_name"] for s in c.get("/scenes").json()}
++    assert names == {"Intro", "Main"}

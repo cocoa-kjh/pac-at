@@ -1,0 +1,73 @@
+# Review package: 8801589..4f8a7ed
+
+## Commits
+4f8a7ed chore: 백엔드 프로젝트 스캐폴딩 및 설정
+
+## Files changed
+ backend/app/__init__.py   |  0
+ backend/app/config.py     | 20 ++++++++++++++++++++
+ backend/pyproject.toml    | 22 ++++++++++++++++++++++
+ backend/tests/__init__.py |  0
+ 4 files changed, 42 insertions(+)
+
+## Diff
+diff --git a/backend/app/__init__.py b/backend/app/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/backend/app/config.py b/backend/app/config.py
+new file mode 100644
+index 0000000..eabd619
+--- /dev/null
++++ b/backend/app/config.py
+@@ -0,0 +1,20 @@
++from dataclasses import dataclass
++from pathlib import Path
++import os
++
++BASE_DIR = Path(__file__).resolve().parent.parent
++
++@dataclass
++class Settings:
++    db_path: str = os.getenv("DB_PATH", str(BASE_DIR / "scheduler.db"))
++    obs_host: str = os.getenv("OBS_HOST", "localhost")
++    obs_port: int = int(os.getenv("OBS_PORT", "4455"))
++    obs_password: str | None = os.getenv("OBS_PASSWORD") or None
++    port: int = int(os.getenv("PORT", "8000"))
++    client_secret_path: str = os.getenv(
++        "CLIENT_SECRET_PATH",
++        str(BASE_DIR.parent / "_doc" /
++            "client_secret_95002751475-aa4krs09rj7ul96q80nbbn8dokc9t8v4.apps.googleusercontent.com.json"),
++    )
++
++settings = Settings()
+diff --git a/backend/pyproject.toml b/backend/pyproject.toml
+new file mode 100644
+index 0000000..bab0cbf
+--- /dev/null
++++ b/backend/pyproject.toml
+@@ -0,0 +1,22 @@
++[project]
++name = "yt-livestream-scheduler"
++version = "0.1.0"
++requires-python = ">=3.11"
++dependencies = [
++    "fastapi>=0.110",
++    "uvicorn[standard]>=0.29",
++    "sqlalchemy>=2.0",
++    "apscheduler>=3.10",
++    "obsws-python>=1.6",
++    "google-api-python-client>=2.120",
++    "google-auth-oauthlib>=1.2",
++    "python-dateutil>=2.9",
++    "pydantic>=2.6",
++]
++
++[project.optional-dependencies]
++dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "httpx>=0.27"]
++
++[tool.pytest.ini_options]
++pythonpath = ["."]
++asyncio_mode = "auto"
+diff --git a/backend/tests/__init__.py b/backend/tests/__init__.py
+new file mode 100644
+index 0000000..e69de29

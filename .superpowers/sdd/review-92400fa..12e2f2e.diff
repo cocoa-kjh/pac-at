@@ -1,0 +1,206 @@
+# Review package: 92400fa..12e2f2e
+
+## Commits
+12e2f2e feat: OAuth 인증, 상태 엔드포인트, lifespan 구성 추가
+
+## Files changed
+ backend/app/main.py              | 48 ++++++++++++++++++++++++++++++++++-----
+ backend/app/routers/auth.py      | 49 ++++++++++++++++++++++++++++++++++++++++
+ backend/app/routers/status.py    | 22 ++++++++++++++++++
+ backend/tests/test_api_status.py | 33 +++++++++++++++++++++++++++
+ 4 files changed, 146 insertions(+), 6 deletions(-)
+
+## Diff
+diff --git a/backend/app/main.py b/backend/app/main.py
+index 142a5eb..b66b0c0 100644
+--- a/backend/app/main.py
++++ b/backend/app/main.py
+@@ -1,24 +1,60 @@
+-from fastapi import FastAPI, Depends
+-from app.db import SessionLocal
+-
+-app = FastAPI(title="YT Livestream Scheduler")
++from contextlib import asynccontextmanager
++from fastapi import FastAPI
++from fastapi.middleware.cors import CORSMiddleware
++from apscheduler.schedulers.background import BackgroundScheduler
++from app.db import SessionLocal, get_engine, init_db
++from app.config import settings
++from app.clients.obs_client import OBSClient
++from app.scheduler.engine import ScheduleEngine
+ 
+ def get_db():
+     db = SessionLocal()
+     try: yield db
+     finally: db.close()
+ 
+-# 실제 ScheduleEngine은 lifespan에서 구성. 기본 의존성은 앱 상태에서 가져옴.
+ def get_engine_dep():
+     return app.state.engine
+ 
+ def get_youtube_dep():
+     return app.state.youtube
+ 
+ def get_obs_dep():
+     return app.state.obs
+ 
+-from app.routers import broadcasts, scenes, schedules  # noqa: E402
++@asynccontextmanager
++async def lifespan(app: FastAPI):
++    engine = get_engine(settings.db_path)
++    init_db(engine)
++    obs = OBSClient(settings.obs_host, settings.obs_port, settings.obs_password)
++    try:
++        obs.connect()
++    except Exception:
++        pass
++    app.state.obs = obs
++    app.state.youtube = _build_youtube_client()
++    scheduler = BackgroundScheduler(); scheduler.start()
++    app.state.engine = ScheduleEngine(scheduler, obs, app.state.youtube, SessionLocal)
++    app.state.engine.load_pending()
++    yield
++    scheduler.shutdown(wait=False)
++
++def _build_youtube_client():
++    from app.routers.auth import load_credentials
++    from app.clients.youtube_client import build_youtube, YouTubeClient
++    db = SessionLocal()
++    try:
++        creds = load_credentials(db)
++        return YouTubeClient(build_youtube(creds)) if creds else None
++    finally:
++        db.close()
++
++app = FastAPI(title="YT Livestream Scheduler", lifespan=lifespan)
++app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"],
++                   allow_methods=["*"], allow_headers=["*"])
++
++from app.routers import broadcasts, scenes, schedules, auth, status  # noqa: E402
+ app.include_router(broadcasts.router)
+ app.include_router(scenes.router)
+ app.include_router(schedules.router)
++app.include_router(auth.router)
++app.include_router(status.router)
+diff --git a/backend/app/routers/auth.py b/backend/app/routers/auth.py
+new file mode 100644
+index 0000000..63b2861
+--- /dev/null
++++ b/backend/app/routers/auth.py
+@@ -0,0 +1,49 @@
++from datetime import datetime, timezone
++from fastapi import APIRouter, Depends, Request
++from fastapi.responses import RedirectResponse
++from google_auth_oauthlib.flow import Flow
++from google.oauth2.credentials import Credentials
++from app.main import get_db
++from app.config import settings
++from app.models import OAuthToken
++
++SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
++REDIRECT_URI = f"http://localhost:{settings.port}/auth/youtube/callback"
++
++router = APIRouter(tags=["auth"])
++
++def _flow():
++    return Flow.from_client_secrets_file(
++        settings.client_secret_path, scopes=SCOPES, redirect_uri=REDIRECT_URI)
++
++@router.get("/auth/youtube")
++def youtube_auth():
++    flow = _flow()
++    url, _ = flow.authorization_url(access_type="offline", prompt="consent",
++                                    include_granted_scopes="true")
++    return RedirectResponse(url)
++
++@router.get("/auth/youtube/callback")
++def youtube_callback(request: Request, db=Depends(get_db)):
++    flow = _flow()
++    flow.fetch_token(authorization_response=str(request.url))
++    creds = flow.credentials
++    token = db.query(OAuthToken).first() or OAuthToken()
++    token.access_token = creds.token
++    token.refresh_token = creds.refresh_token
++    token.expiry = creds.expiry
++    token.scopes = " ".join(creds.scopes or SCOPES)
++    db.add(token); db.commit()
++    return RedirectResponse("http://localhost:5173/")
++
++def load_credentials(db) -> Credentials | None:
++    token = db.query(OAuthToken).first()
++    if not token or not token.refresh_token:
++        return None
++    import json
++    with open(settings.client_secret_path) as f:
++        cfg = json.load(f)["web"]
++    return Credentials(
++        token=token.access_token, refresh_token=token.refresh_token,
++        token_uri=cfg["token_uri"], client_id=cfg["client_id"],
++        client_secret=cfg["client_secret"], scopes=(token.scopes or "").split())
+diff --git a/backend/app/routers/status.py b/backend/app/routers/status.py
+new file mode 100644
+index 0000000..684ab6e
+--- /dev/null
++++ b/backend/app/routers/status.py
+@@ -0,0 +1,22 @@
++from fastapi import APIRouter, Depends
++from app.main import get_db, get_obs_dep
++from app.models import OAuthToken, Schedule
++
++router = APIRouter(tags=["status"])
++
++@router.get("/status")
++def status(db=Depends(get_db), obs=Depends(get_obs_dep)):
++    token = db.query(OAuthToken).first()
++    nxt = (db.query(Schedule)
++             .filter(Schedule.status == "pending")
++             .order_by(Schedule.start_at).first())
++    try:
++        obs_connected = obs.is_streaming() is not None
++    except Exception:
++        obs_connected = False
++    return {
++        "obs_connected": obs_connected,
++        "youtube_authed": token is not None,
++        "next_schedule": {"id": nxt.id, "start_at": nxt.start_at.isoformat()} if nxt else None,
++        "live": bool(token) and False,
++    }
+diff --git a/backend/tests/test_api_status.py b/backend/tests/test_api_status.py
+new file mode 100644
+index 0000000..acfe5e8
+--- /dev/null
++++ b/backend/tests/test_api_status.py
+@@ -0,0 +1,33 @@
++import pytest
++from fastapi.testclient import TestClient
++from unittest.mock import MagicMock
++from sqlalchemy import create_engine
++from sqlalchemy.pool import StaticPool
++from sqlalchemy.orm import sessionmaker
++from app.db import Base
++from app.main import app, get_db, get_obs_dep
++
++@pytest.fixture
++def client():
++    engine = create_engine(
++        "sqlite:///:memory:",
++        connect_args={"check_same_thread": False},
++        poolclass=StaticPool,
++    )
++    Base.metadata.create_all(bind=engine)
++    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
++    def _get_db():
++        db = TestingSessionLocal()
++        try: yield db
++        finally: db.close()
++    obs = MagicMock(); obs.is_streaming.return_value = False
++    app.dependency_overrides[get_db] = _get_db
++    app.dependency_overrides[get_obs_dep] = lambda: obs
++    yield TestClient(app), obs
++    app.dependency_overrides.clear()
++
++def test_status_reports_no_youtube_when_no_token(client):
++    c, _ = client
++    r = c.get("/status")
++    assert r.status_code == 200
++    assert r.json()["youtube_authed"] is False

@@ -11,10 +11,11 @@
 ## 실행
 백엔드:
     cd backend && python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-    .venv/bin/uvicorn app.main:app --port 8000
+    # .venv/bin/uvicorn dfpp.main:app --port 8100
+    source .venv/bin/activate && uvicorn app.main:app --port 8100
 프론트엔드:
     cd frontend && npm install && npm run dev
-브라우저에서 http://localhost:5173 접속.
+브라우저에서 http://localhost:8101 접속.
 
 ## 최초 1회: YouTube 연결
 설정 페이지 > "YouTube 연결" 클릭 → Google 동의 → 자동 복귀.

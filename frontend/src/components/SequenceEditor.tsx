@@ -19,15 +19,19 @@ export default function SequenceEditor(
       <div style={{ marginBottom: 8 }}>
         <select onChange={e => { add(Number(e.target.value)); (e.target as HTMLSelectElement).value = ""; }} value="">
           <option value="" disabled>+ 씬 추가...</option>
-          {scenes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {scenes.filter(s => s.active).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>
       {value.map((it, i) => {
         const sc = scenes.find(s => s.id === it.scene_id);
+        const dead = !sc || !sc.active;
         return (
-          <div key={i} className="seq-item">
+          <div key={i} className="seq-item" style={dead ? { color: "#f08080" } : undefined}>
             <div className="seq-index">{i + 1}</div>
-            <span className="seq-name">{sc?.name ?? `씬 #${it.scene_id}`}</span>
+            <span className="seq-name">
+              {sc?.name ?? `씬 #${it.scene_id}`}
+              {dead && " (OBS에 없음)"}
+            </span>
             <input
               type="number"
               value={it.duration_seconds ?? 0}

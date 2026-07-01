@@ -3,6 +3,7 @@ from app.main import get_db, get_engine_dep, get_obs_dep, get_youtube_dep
 from app import schemas
 from app.models import Schedule, SequenceItem
 from app.scheduler import steps
+from app.scheduler.preflight import preflight_schedule
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -24,6 +25,14 @@ def create_schedule(payload: schemas.ScheduleCreate, db=Depends(get_db),
 @router.get("", response_model=list[schemas.ScheduleOut])
 def list_schedules(db=Depends(get_db)):
     return db.query(Schedule).all()
+
+@router.get("/{schedule_id}/preflight")
+def schedule_preflight(schedule_id: int, db=Depends(get_db),
+                       obs=Depends(get_obs_dep), yt=Depends(get_youtube_dep)):
+    s = db.get(Schedule, schedule_id)
+    if not s:
+        raise HTTPException(404, "schedule not found")
+    return preflight_schedule(obs, yt, s)
 
 @router.post("/{schedule_id}/go-live")
 def manual_go_live(schedule_id: int, db=Depends(get_db),

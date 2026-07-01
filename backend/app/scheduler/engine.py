@@ -27,7 +27,7 @@ class ScheduleEngine:
         db = self._session_factory()
         try:
             s = db.get(Schedule, schedule_id)
-            steps.switch_to_item(self._obs, s, index)
+            steps.switch_to_item(self._obs, s, index, db=db)
         finally:
             db.close()
 

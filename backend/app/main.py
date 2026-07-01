@@ -24,7 +24,7 @@ def get_obs_dep():
 def setup_logging():
     import logging
     try:
-        from uvicorn.logging import ColourizedFormatter
+        from uvicorn.logging import ColourizedFormatter, AccessFormatter
     except ImportError:
         return
     for name in ["uvicorn", "uvicorn.error", "uvicorn.access"]:
@@ -33,17 +33,21 @@ def setup_logging():
             formatter = handler.formatter
             if not formatter:
                 continue
-            is_access = "client_addr" in getattr(formatter, "_fmt", "") or name == "uvicorn.access"
+            is_access = name == "uvicorn.access"
             if is_access:
                 new_fmt = '[%(asctime)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+                new_formatter = AccessFormatter(
+                    fmt=new_fmt,
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                    use_colors=getattr(formatter, "use_colors", None)
+                )
             else:
                 new_fmt = '[%(asctime)s] %(levelprefix)s %(message)s'
-            
-            new_formatter = ColourizedFormatter(
-                fmt=new_fmt,
-                datefmt="%Y-%m-%d %H:%M:%S",
-                use_colors=getattr(formatter, "use_colors", None)
-            )
+                new_formatter = ColourizedFormatter(
+                    fmt=new_fmt,
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                    use_colors=getattr(formatter, "use_colors", None)
+                )
             handler.setFormatter(new_formatter)
 
 @asynccontextmanager
@@ -76,7 +80,7 @@ def _build_youtube_client():
         db.close()
 
 app = FastAPI(title="YT Livestream Scheduler", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"],
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:8101"],
                    allow_methods=["*"], allow_headers=["*"])
 
 from app.routers import broadcasts, scenes, schedules, auth, status  # noqa: E402

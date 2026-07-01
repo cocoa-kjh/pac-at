@@ -17,9 +17,10 @@ export default function Scenes() {
       </div>
       <ul className="item-list">
         {scenes.map(s => (
-          <li key={s.id} className="item-row">
+          <li key={s.id} className="item-row" style={!s.active ? { opacity: 0.5 } : undefined}>
             <span className="item-title">{s.name}</span>
             <span className="item-meta">{s.obs_scene_name}</span>
+            {!s.active && <span className="badge badge-error">OBS에서 제거됨</span>}
           </li>
         ))}
         {scenes.length === 0 && (

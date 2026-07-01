@@ -19,6 +19,7 @@ class SceneCreate(BaseModel):
 
 class SceneOut(SceneCreate):
     id: int
+    active: bool = True
     class Config: from_attributes = True
 
 class SequenceItemIn(BaseModel):

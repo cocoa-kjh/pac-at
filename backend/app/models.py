@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import (Column, Integer, String, Text, DateTime, ForeignKey)
+from sqlalchemy import (Column, Integer, String, Text, DateTime, ForeignKey, Boolean)
 from sqlalchemy.orm import relationship
 from app.db import Base
 
@@ -20,6 +20,7 @@ class Scene(Base):
     name = Column(String, nullable=False)
     obs_scene_name = Column(String, nullable=False)
     note = Column(Text, default="")
+    active = Column(Boolean, default=True, nullable=False)  # OBS에 현재 존재 여부 (sync 시 갱신, 행은 삭제 안 함)
 
 class Broadcast(Base):
     __tablename__ = "broadcast"

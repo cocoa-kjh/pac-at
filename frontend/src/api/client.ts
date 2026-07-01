@@ -1,5 +1,5 @@
-import type { Broadcast, Scene, Schedule, Status } from "../types";
-const BASE = "http://localhost:8000";
+import type { Broadcast, Scene, Schedule, Status, SchedulePreflight, BroadcastPreflight } from "../types";
+const BASE = "http://localhost:8100";
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(BASE + path, {
@@ -25,5 +25,9 @@ export const api = {
     req<{ ok: boolean }>(`/schedules/${id}/go-live`, { method: "POST" }),
   manualGoComplete: (id: number) =>
     req<{ ok: boolean }>(`/schedules/${id}/go-complete`, { method: "POST" }),
+  preflightSchedule: (id: number) =>
+    req<SchedulePreflight>(`/schedules/${id}/preflight`),
+  preflightBroadcast: (id: number) =>
+    req<BroadcastPreflight>(`/broadcasts/${id}/preflight`),
   getStatus: () => req<Status>("/status"),
 };

@@ -2,14 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.main import get_db, get_youtube_dep
 from app import schemas
 from app.models import Broadcast
+from app.scheduler.preflight import preflight_broadcast
 
 router = APIRouter(prefix="/broadcasts", tags=["broadcasts"])
 
 
 @router.post("", response_model=schemas.BroadcastOut)
 def create_broadcast(payload: schemas.BroadcastCreate, db=Depends(get_db)):
-    """로컬 데이터베이스에 새 방송 정보 레코드를 생성합니다."""
-    b = Broadcast(**payload.model_dump()); db.add(b); db.commit(); db.refresh(b)
+    b = Broadcast(**payload.model_dump())
+    db.add(b)
+    db.commit()
+    db.refresh(b)
     return b
 
 
@@ -17,6 +20,15 @@ def create_broadcast(payload: schemas.BroadcastCreate, db=Depends(get_db)):
 def list_broadcasts(db=Depends(get_db)):
     """로컬 데이터베이스에 저장된 모든 방송 목록을 조회합니다."""
     return db.query(Broadcast).all()
+
+
+@router.get("/{broadcast_id}/preflight")
+def broadcast_preflight(broadcast_id: int, db=Depends(get_db),
+                        yt=Depends(get_youtube_dep)):
+    b = db.get(Broadcast, broadcast_id)
+    if not b:
+        raise HTTPException(404)
+    return preflight_broadcast(yt, b)
 
 
 @router.post("/{broadcast_id}/youtube", response_model=schemas.BroadcastOut)

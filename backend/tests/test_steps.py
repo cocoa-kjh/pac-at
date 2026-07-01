@@ -46,10 +46,11 @@ def test_go_live_runs_full_sequence(db):
     b, s = _seed(db)
     obs, yt = MagicMock(), MagicMock()
     s.broadcast.youtube_stream_key = "key1"
+    obs.is_streaming.return_value = False
 
     steps.go_live(db, obs, yt, s)
 
-    yt.transition.assert_called_with("bc1", "live")
+    yt.go_live.assert_called_with("bc1")
     obs.set_stream_key.assert_called_once()
     obs.start_stream.assert_called_once()
     obs.switch_scene.assert_called_with("Main")

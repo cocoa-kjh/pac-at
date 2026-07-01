@@ -21,9 +21,36 @@ def get_youtube_dep():
 def get_obs_dep():
     return app.state.obs
 
+def setup_logging():
+    import logging
+    try:
+        from uvicorn.logging import ColourizedFormatter
+    except ImportError:
+        return
+    for name in ["uvicorn", "uvicorn.error", "uvicorn.access"]:
+        logger = logging.getLogger(name)
+        for handler in logger.handlers:
+            formatter = handler.formatter
+            if not formatter:
+                continue
+            is_access = "client_addr" in getattr(formatter, "_fmt", "") or name == "uvicorn.access"
+            if is_access:
+                new_fmt = '[%(asctime)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+            else:
+                new_fmt = '[%(asctime)s] %(levelprefix)s %(message)s'
+            
+            new_formatter = ColourizedFormatter(
+                fmt=new_fmt,
+                datefmt="%Y-%m-%d %H:%M:%S",
+                use_colors=getattr(formatter, "use_colors", None)
+            )
+            handler.setFormatter(new_formatter)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     engine = get_engine(settings.db_path)
+
     init_db(engine)
     obs = OBSClient(settings.obs_host, settings.obs_port, settings.obs_password)
     try:

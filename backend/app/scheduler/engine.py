@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, timezone
 from app.models import Schedule
 from app.scheduler import steps
 from app.scheduler.recurrence import next_occurrence
@@ -59,8 +59,17 @@ class ScheduleEngine:
         db = self._session_factory()
         try:
             s = db.get(Schedule, schedule_id)
+            
+            # SQLite에서 읽어온 naive datetime을 UTC timezone-aware datetime으로 변환
+            start_at = s.start_at
+            if start_at.tzinfo is None:
+                start_at = start_at.replace(tzinfo=timezone.utc)
+            end_at = s.end_at
+            if end_at.tzinfo is None:
+                end_at = end_at.replace(tzinfo=timezone.utc)
+
             # 1. 방송 시작 예약 (Start At)
-            self._sched.add_job(self._run_go_live, "date", run_date=s.start_at,
+            self._sched.add_job(self._run_go_live, "date", run_date=start_at,
                                 args=[s.id], id=f"sched:{s.id}:live",
                                 replace_existing=True, misfire_grace_time=300)
             
@@ -70,7 +79,7 @@ class ScheduleEngine:
                 if item.order_index == 0:
                     offset += item.duration_seconds or 0
                     continue
-                run_at = s.start_at + timedelta(seconds=offset)
+                run_at = start_at + timedelta(seconds=offset)
                 self._sched.add_job(self._run_switch, "date", run_date=run_at,
                                     args=[s.id, item.order_index],
                                     id=f"sched:{s.id}:item:{item.order_index}",
@@ -78,11 +87,34 @@ class ScheduleEngine:
                 offset += item.duration_seconds or 0
             
             # 3. 방송 종료 예약 (End At)
-            self._sched.add_job(self._run_go_complete, "date", run_date=s.end_at,
+            self._sched.add_job(self._run_go_complete, "date", run_date=end_at,
                                 args=[s.id], id=f"sched:{s.id}:complete",
                                 replace_existing=True, misfire_grace_time=300)
         finally:
             db.close()
+
+    def _remove_all_jobs(self, schedule_id):
+        """해당 스케줄의 시작/종료/모든 장면전환 job을 제거합니다 (상태 변경 없음).
+
+        시퀀스 item 개수가 줄어든 경우에도 orphan 전환 job이 남지 않도록,
+        DB의 현재 item이 아니라 스케줄러에 실제 등록된 job id를 prefix로 스캔해
+        제거합니다.
+        """
+        prefix = f"sched:{schedule_id}:"
+        for job in self._sched.get_jobs():
+            if job.id and job.id.startswith(prefix):
+                try:
+                    self._sched.remove_job(job.id)
+                except Exception:
+                    pass
+
+    def reschedule_jobs(self, schedule_id):
+        """스케줄 수정 후 호출: 기존 job을 모두 제거하고 현재 DB 상태로 재등록합니다.
+
+        cancel과 달리 status를 'canceled'로 바꾸지 않습니다.
+        """
+        self._remove_all_jobs(schedule_id)
+        self.register(schedule_id)
 
     def cancel(self, schedule_id):
         """스케줄러에 등록되어 있던 해당 스케줄의 모든 작업(시작/전환/종료)을 취소하고 상태를 복원합니다."""

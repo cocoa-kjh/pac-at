@@ -49,6 +49,31 @@ def test_recurrence_reschedules_after_complete(db):
     job_ids = [c.kwargs.get("id") or c.args[2] for c in sched.add_job.call_args_list]
     assert f"sched:{s.id}:live" in job_ids
 
+def test_reschedule_jobs_removes_old_and_reregisters_without_canceling(db):
+    from app.db import SessionLocal
+    s = _seed_two_items(db)
+    sched = MagicMock()
+    # 스케줄러에 기존 job이 등록돼 있다고 가정 (item:1, item:2 등 orphan 포함)
+    jobs = []
+    for jid in [f"sched:{s.id}:live", f"sched:{s.id}:complete",
+                f"sched:{s.id}:item:1", f"sched:{s.id}:item:2"]:
+        j = MagicMock(); j.id = jid; jobs.append(j)
+    sched.get_jobs.return_value = jobs
+    eng = ScheduleEngine(sched, MagicMock(), MagicMock(), SessionLocal)
+
+    eng.reschedule_jobs(s.id)
+
+    # orphan 포함 모든 기존 job 제거됨
+    removed = {c.args[0] for c in sched.remove_job.call_args_list}
+    assert f"sched:{s.id}:item:2" in removed  # 줄어든 orphan도 제거
+    assert f"sched:{s.id}:live" in removed
+    # 재등록됨
+    job_ids = [c.kwargs.get("id") or c.args[2] for c in sched.add_job.call_args_list]
+    assert f"sched:{s.id}:live" in job_ids
+    # status는 건드리지 않음
+    db.refresh(s)
+    assert s.status == "pending"
+
 def test_cancel_removes_jobs_and_sets_status(db):
     from app.db import SessionLocal
     s = _seed_two_items(db)

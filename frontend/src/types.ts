@@ -6,7 +6,7 @@ export interface Scene { id: number; name: string; obs_scene_name: string; note:
 export interface SequenceItem { scene_id: number; order_index: number; duration_seconds: number | null; }
 export interface Schedule {
   id: number; broadcast_id: number; start_at: string; end_at: string;
-  recurrence: string; status: string;
+  recurrence: string; recurrence_rule: string | null; status: string; items: SequenceItem[];
 }
 export interface Status {
   obs_connected: boolean; youtube_authed: boolean;

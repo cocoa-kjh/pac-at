@@ -22,6 +22,35 @@ def list_broadcasts(db=Depends(get_db)):
     return db.query(Broadcast).all()
 
 
+@router.patch("/{broadcast_id}", response_model=schemas.BroadcastOut)
+def update_broadcast(broadcast_id: int, payload: schemas.BroadcastUpdate,
+                     db=Depends(get_db), yt=Depends(get_youtube_dep)):
+    """방송 메타데이터(제목/설명/공개범위)를 수정합니다.
+
+    이미 송출 중(live)이거나 종료된(completed) 방송은 수정을 거부합니다.
+    YouTube 이벤트가 생성된 방송이면 YouTube 측 메타데이터도 즉시 동기화합니다.
+    """
+    b = db.get(Broadcast, broadcast_id)
+    if not b:
+        raise HTTPException(404)
+    if b.status in ("live", "completed"):
+        raise HTTPException(409, f"status '{b.status}' 방송은 수정할 수 없음")
+
+    data = payload.model_dump(exclude_unset=True)
+    for field in ("title", "description", "privacy"):
+        if field in data and data[field] is not None:
+            setattr(b, field, data[field])
+
+    # YouTube 이벤트가 이미 있으면 원격 메타데이터도 동기화
+    if b.youtube_broadcast_id:
+        if yt is None:
+            raise HTTPException(409, "YouTube not authenticated")
+        yt.update_broadcast(b.youtube_broadcast_id, b.title, b.description, b.privacy)
+
+    db.commit(); db.refresh(b)
+    return b
+
+
 @router.get("/{broadcast_id}/preflight")
 def broadcast_preflight(broadcast_id: int, db=Depends(get_db),
                         yt=Depends(get_youtube_dep)):

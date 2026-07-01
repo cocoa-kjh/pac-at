@@ -49,6 +49,26 @@ def test_youtube_event_409_when_unauthed(client):
     # restore original override
     app.dependency_overrides[get_youtube_dep] = lambda: yt
 
+def test_update_broadcast_syncs_to_youtube(client):
+    """YouTube 이벤트가 생성된 방송을 수정하면 YouTube update도 호출된다."""
+    c, yt, obs = client
+    yt.create_broadcast.return_value = "bc1"
+    yt.create_stream.return_value = ("st1", "key1", "rtmp://x")
+    bid = c.post("/broadcasts", json={"title": "옛"}).json()["id"]
+    c.post(f"/broadcasts/{bid}/youtube")
+
+    r = c.patch(f"/broadcasts/{bid}", json={"title": "새", "description": "d", "privacy": "unlisted"})
+    assert r.status_code == 200
+    yt.update_broadcast.assert_called_once_with("bc1", "새", "d", "unlisted")
+
+def test_update_broadcast_no_youtube_call_when_no_event(client):
+    """YouTube 이벤트가 없는 방송 수정은 update_broadcast를 호출하지 않는다."""
+    c, yt, obs = client
+    bid = c.post("/broadcasts", json={"title": "옛"}).json()["id"]
+    r = c.patch(f"/broadcasts/{bid}", json={"title": "새"})
+    assert r.status_code == 200
+    yt.update_broadcast.assert_not_called()
+
 def test_broadcast_preflight_reports_missing_stream_key(client):
     c, yt, obs = client
     bid = c.post("/broadcasts", json={"title": "방송"}).json()["id"]

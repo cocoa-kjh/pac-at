@@ -9,6 +9,13 @@ function statusBadge(status: string) {
   return <span className={cls}>{status}</span>;
 }
 
+// ISO(UTC) → datetime-local 입력값(로컬 시간, 초 제외)
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function Schedules() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [scenes, setScenes] = useState<Scene[]>([]);
@@ -19,8 +26,24 @@ export default function Schedules() {
   const [rrule, setRrule] = useState("");
   const [items, setItems] = useState<SequenceItem[]>([]);
   const [preflights, setPreflights] = useState<Record<number, SchedulePreflight>>({});
+  const [editId, setEditId] = useState<number | null>(null);   // null = 생성 모드
 
   const reload = () => api.listSchedules().then(setSchedules);
+
+  const resetForm = () => {
+    setEditId(null); setBroadcastId(null);
+    setStartAt(""); setEndAt(""); setRrule(""); setItems([]);
+  };
+
+  const startEdit = (s: Schedule) => {
+    setEditId(s.id);
+    setBroadcastId(s.broadcast_id);
+    setStartAt(toLocalInput(s.start_at));
+    setEndAt(toLocalInput(s.end_at));
+    setRrule(s.recurrence_rule ?? "");
+    setItems(s.items.map(it => ({ ...it })));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const checkPreflight = (id: number) =>
     api.preflightSchedule(id).then(p => setPreflights(prev => ({ ...prev, [id]: p })));
@@ -38,18 +61,27 @@ export default function Schedules() {
     api.listBroadcasts().then(setBroadcasts);
   }, []);
 
-  const create = async () => {
+  const submit = async () => {
     if (broadcastId == null || !startAt || !endAt) return;
-    await api.createSchedule({
+    const payload = {
       broadcast_id: broadcastId,
       start_at: new Date(startAt).toISOString(),
       end_at: new Date(endAt).toISOString(),
       recurrence: rrule ? "custom" : "none",
       recurrence_rule: rrule || null,
       items,
-    });
-    setItems([]);
-    reload();
+    };
+    try {
+      if (editId == null) {
+        await api.createSchedule(payload);
+      } else {
+        await api.updateSchedule(editId, payload);
+      }
+      resetForm();
+      reload();
+    } catch (e: any) {
+      alert(e.message);
+    }
   };
 
   return (
@@ -59,7 +91,7 @@ export default function Schedules() {
       </div>
 
       <div className="card">
-        <h3>새 스케쥴 생성</h3>
+        <h3>{editId == null ? "새 스케쥴 생성" : `스케쥴 #${editId} 수정`}</h3>
         <div className="form-group">
           <label>방송 선택</label>
           <select
@@ -92,8 +124,13 @@ export default function Schedules() {
           />
         </div>
         <SequenceEditor value={items} onChange={setItems} scenes={scenes} />
-        <div style={{ marginTop: 16 }}>
-          <button className="btn-primary" onClick={create}>스케쥴 생성</button>
+        <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+          <button className="btn-primary" onClick={submit}>
+            {editId == null ? "스케쥴 생성" : "변경 저장"}
+          </button>
+          {editId != null && (
+            <button className="btn-secondary" onClick={resetForm}>취소</button>
+          )}
         </div>
       </div>
 
@@ -133,6 +170,14 @@ export default function Schedules() {
                       onClick={() => api.manualGoComplete(s.id).then(reload).catch(e => alert(e.message))}
                     >
                       지금 종료
+                    </button>
+                  )}
+                  {s.status !== "running" && (
+                    <button
+                      className="btn-secondary btn-sm"
+                      onClick={() => startEdit(s)}
+                    >
+                      수정
                     </button>
                   )}
                   {s.status !== "running" && (

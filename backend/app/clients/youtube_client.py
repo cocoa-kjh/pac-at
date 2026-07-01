@@ -43,6 +43,27 @@ class YouTubeClient:
         self._yt.liveBroadcasts().bind(
             id=broadcast_id, part="id,contentDetails", streamId=stream_id).execute()
 
+    def update_broadcast(self, broadcast_id: str, title: str, description: str,
+                         privacy: str) -> None:
+        """기존 유튜브 방송의 메타데이터(제목/설명/공개범위)를 갱신합니다.
+
+        liveBroadcasts.update는 전체 리소스 교체 방식이라 기존 snippet 값을 먼저
+        읽어와(특히 scheduledStartTime 보존) 변경 필드만 덮어씁니다.
+        """
+        resp = self._yt.liveBroadcasts().list(
+            id=broadcast_id, part="snippet,status").execute()
+        item = resp["items"][0]
+        snippet = item["snippet"]
+        snippet["title"] = title
+        snippet["description"] = description
+        body = {
+            "id": broadcast_id,
+            "snippet": snippet,
+            "status": {"privacyStatus": privacy},
+        }
+        self._yt.liveBroadcasts().update(
+            part="snippet,status", body=body).execute()
+
     def get_broadcast_status(self, broadcast_id: str) -> str:
         """방송의 현재 lifeCycleStatus를 반환합니다."""
         resp = self._yt.liveBroadcasts().list(

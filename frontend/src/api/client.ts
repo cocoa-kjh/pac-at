@@ -12,6 +12,8 @@ export const api = {
   listBroadcasts: () => req<Broadcast[]>("/broadcasts"),
   createBroadcast: (data: Partial<Broadcast>) =>
     req<Broadcast>("/broadcasts", { method: "POST", body: JSON.stringify(data) }),
+  updateBroadcast: (id: number, data: Partial<Broadcast>) =>
+    req<Broadcast>(`/broadcasts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   createYoutubeEvent: (id: number) =>
     req<Broadcast>(`/broadcasts/${id}/youtube`, { method: "POST" }),
   listScenes: () => req<Scene[]>("/scenes"),
@@ -19,6 +21,8 @@ export const api = {
   listSchedules: () => req<Schedule[]>("/schedules"),
   createSchedule: (data: any) =>
     req<Schedule>("/schedules", { method: "POST", body: JSON.stringify(data) }),
+  updateSchedule: (id: number, data: any) =>
+    req<Schedule>(`/schedules/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteSchedule: (id: number) =>
     req<{ ok: boolean }>(`/schedules/${id}`, { method: "DELETE" }),
   manualGoLive: (id: number) =>

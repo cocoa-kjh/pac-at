@@ -29,3 +29,25 @@ def test_transition_calls_api():
     client.transition("bc123", "live")
     yt.liveBroadcasts().transition.assert_called_with(
         broadcastStatus="live", id="bc123", part="id,status")
+
+
+def test_update_broadcast_preserves_existing_snippet():
+    yt = MagicMock()
+    # 기존 snippet에 scheduledStartTime 등 보존해야 할 값이 있음
+    yt.liveBroadcasts().list().execute.return_value = {
+        "items": [{
+            "snippet": {"title": "옛제목", "description": "옛설명",
+                        "scheduledStartTime": "2026-07-01T09:00:00Z"},
+            "status": {"privacyStatus": "private"},
+        }]
+    }
+    client = YouTubeClient(yt)
+    client.update_broadcast("bc123", "새제목", "새설명", "unlisted")
+
+    _, kwargs = yt.liveBroadcasts().update.call_args
+    body = kwargs["body"]
+    assert body["id"] == "bc123"
+    assert body["snippet"]["title"] == "새제목"
+    assert body["snippet"]["description"] == "새설명"
+    assert body["snippet"]["scheduledStartTime"] == "2026-07-01T09:00:00Z"  # 보존
+    assert body["status"]["privacyStatus"] == "unlisted"

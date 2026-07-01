@@ -20,13 +20,27 @@ def go_live(db, obs, yt, schedule):
     b = schedule.broadcast
     try:
         crud.log_run(db, schedule.id, "go_live_start")
-        yt.transition(b.youtube_broadcast_id, "live")
+        
+        # OBS가 이미 송출 중인 경우, 새로운 스트림 키 설정을 적용하기 위해 먼저 송출을 중단합니다.
+        if obs.is_streaming():
+            crud.log_run(db, schedule.id, "go_live_info", "OBS is already streaming. Stopping it to apply new stream key.")
+            obs.stop_stream()
+            import time
+            for _ in range(10):  # 최대 5초 동안 완전히 멈출 때까지 대기
+                if not obs.is_streaming():
+                    break
+                time.sleep(0.5)
+
         obs.set_stream_key(DEFAULT_RTMP, b.youtube_stream_key)
         obs.start_stream()
+        yt.wait_for_stream_active(b.youtube_broadcast_id, timeout=60)
+        yt.wait_for_broadcast_ready(b.youtube_broadcast_id, timeout=30)
+        yt.go_live(b.youtube_broadcast_id)
         switch_to_item(obs, schedule, 0)
         crud.set_broadcast_status(db, b.id, "live")
         crud.set_schedule_status(db, schedule.id, "running")
         crud.log_run(db, schedule.id, "go_live_done")
+
     except Exception as e:
         crud.set_broadcast_status(db, b.id, "error")
         crud.log_run(db, schedule.id, "go_live_error", str(e))

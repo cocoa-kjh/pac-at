@@ -22,7 +22,7 @@ class YouTubeClient:
                         "scheduledStartTime": start_time.isoformat()},
             "status": {"privacyStatus": privacy,
                        "selfDeclaredMadeForKids": False},
-            "contentDetails": {"enableAutoStart": False, "enableAutoStop": False},
+            "contentDetails": {"enableAutoStart": False, "enableAutoStop": False, "enableMonitorStream": False},
         }
         resp = self._yt.liveBroadcasts().insert(
             part="snippet,status,contentDetails", body=body).execute()
@@ -43,8 +43,77 @@ class YouTubeClient:
         self._yt.liveBroadcasts().bind(
             id=broadcast_id, part="id,contentDetails", streamId=stream_id).execute()
 
+    def get_broadcast_status(self, broadcast_id: str) -> str:
+        """방송의 현재 lifeCycleStatus를 반환합니다."""
+        resp = self._yt.liveBroadcasts().list(
+            id=broadcast_id, part="status").execute()
+        return resp["items"][0]["status"]["lifeCycleStatus"]
+
+    def get_stream_status(self, broadcast_id: str) -> str:
+        """방송에 바인딩된 스트림의 streamStatus를 반환합니다."""
+        resp = self._yt.liveBroadcasts().list(
+            id=broadcast_id, part="contentDetails,status").execute()
+        item = resp["items"][0]
+        stream_id = item["contentDetails"]["boundStreamId"]
+        s_resp = self._yt.liveStreams().list(
+            id=stream_id, part="status").execute()
+        return s_resp["items"][0]["status"]["streamStatus"]
+
+    def wait_for_stream_active(self, broadcast_id: str, timeout: int = 60) -> None:
+        """YouTube가 OBS 신호를 감지할 때까지 대기합니다 (streamStatus=active)."""
+        import time
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            status = self.get_stream_status(broadcast_id)
+            if status == "active":
+                return
+            time.sleep(5)
+        raise TimeoutError(f"stream not active after {timeout}s (last: {status})")
+
+    def has_monitor_stream(self, broadcast_id: str) -> bool:
+        """방송의 enableMonitorStream 설정값을 반환합니다."""
+        resp = self._yt.liveBroadcasts().list(
+            id=broadcast_id, part="contentDetails").execute()
+        return resp["items"][0]["contentDetails"].get("monitorStream", {}).get("enableMonitorStream", True)
+
+    def wait_for_broadcast_ready(self, broadcast_id: str, timeout: int = 30) -> None:
+        """broadcast lifeCycleStatus가 ready가 될 때까지 대기합니다."""
+        import time
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            status = self.get_broadcast_status(broadcast_id)
+            if status == "ready":
+                return
+            if status in ("live", "complete", "revoked"):
+                raise RuntimeError(f"unexpected broadcast status before transition: {status}")
+            time.sleep(3)
+        raise TimeoutError(f"broadcast not ready after {timeout}s (last: {status})")
+
+    def wait_for_broadcast_status(self, broadcast_id: str, target: str, timeout: int = 30) -> None:
+        """broadcast lifeCycleStatus가 target이 될 때까지 대기합니다."""
+        import time
+        deadline = time.time() + timeout
+        status = None
+        while time.time() < deadline:
+            status = self.get_broadcast_status(broadcast_id)
+            if status == target:
+                return
+            time.sleep(3)
+        raise TimeoutError(f"broadcast not {target} after {timeout}s (last: {status})")
+
     def transition(self, broadcast_id: str, status: str) -> None:
-        """방송의 상태를 변경합니다 (예: 'live'로 전환하여 방송 시작, 'complete'로 전환하여 방송 공식 종료)."""
+        """방송의 상태를 변경합니다."""
         self._yt.liveBroadcasts().transition(
             broadcastStatus=status, id=broadcast_id, part="id,status").execute()
+
+    def go_live(self, broadcast_id: str) -> None:
+        """enableMonitorStream 설정에 따라 올바른 경로로 live 전환합니다.
+
+        enableMonitorStream=true : ready → testing → live
+        enableMonitorStream=false: ready → live
+        """
+        if self.has_monitor_stream(broadcast_id):
+            self.transition(broadcast_id, "testing")
+            self.wait_for_broadcast_status(broadcast_id, "testing", timeout=30)
+        self.transition(broadcast_id, "live")
 

@@ -43,4 +43,6 @@ export const api = {
     req<{ ok: boolean }>(`/series/${id}`, { method: "DELETE" }),
   listSeriesOccurrences: (id: number) =>
     req<Schedule[]>(`/series/${id}/occurrences`),
+  generateSeriesNow: (id: number) =>
+    req<Schedule[]>(`/series/${id}/generate`, { method: "POST" }),
 };

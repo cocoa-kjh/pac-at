@@ -37,11 +37,24 @@ export default function SeriesPanel(
   };
 
   const create = async () => {
-    if (!firstStart || !firstEnd) return;
-    if (freq === "WEEKLY" && days.size === 0) return;
-    const rule = freq === "WEEKLY" ? `FREQ=WEEKLY;BYDAY=${[...days].join(",")}` : "FREQ=DAILY";
+    if (!firstStart || !firstEnd) {
+      alert("첫 회차 시작/종료 시각을 입력하세요"); return;
+    }
+    if (freq === "WEEKLY" && days.size === 0) {
+      alert("반복할 요일을 하나 이상 선택하세요"); return;
+    }
+    if (!titleTemplate.trim()) {
+      alert("제목 템플릿을 입력하세요"); return;
+    }
+    if (leadTime < 1) {
+      alert("사전 생성 기간은 1일 이상이어야 함"); return;
+    }
     const start = new Date(firstStart);
     const end = new Date(firstEnd);
+    if (end <= start) {
+      alert("종료 시각은 시작 시각보다 늦어야 함"); return;
+    }
+    const rule = freq === "WEEKLY" ? `FREQ=WEEKLY;BYDAY=${[...days].join(",")}` : "FREQ=DAILY";
     try {
       await api.createSeries({
         first_start_at: start.toISOString(),
@@ -74,6 +87,21 @@ export default function SeriesPanel(
     if (!confirm("이 시리즈의 향후 회차 생성을 중단할까요? (이미 생성된 회차는 유지됩니다)")) return;
     await api.deleteSeries(id);
     reload();
+  };
+
+  const generateNow = async (id: number) => {
+    try {
+      const created = await api.generateSeriesNow(id);
+      alert(created.length > 0 ? `${created.length}개 회차 생성됨` : "생성할 회차 없음 (사전 생성 기간 밖이거나 이미 최신 상태)");
+      reload();
+      if (occurrences[id]) {
+        api.listSeriesOccurrences(id).then(list =>
+          setOccurrences(prev => ({ ...prev, [id]: list })));
+      }
+      onOccurrenceCreated();
+    } catch (e: any) {
+      alert(e.message);
+    }
   };
 
   return (
@@ -152,6 +180,11 @@ export default function SeriesPanel(
                 <button className="btn-secondary btn-sm" onClick={() => toggleOccurrences(sr.id)}>
                   {occurrences[sr.id] ? "회차 숨기기" : "회차 보기"}
                 </button>
+                {sr.active && (
+                  <button className="btn-secondary btn-sm" onClick={() => generateNow(sr.id)}>
+                    지금 생성 확인
+                  </button>
+                )}
                 {sr.active && (
                   <button className="btn-danger btn-sm" onClick={() => stopSeries(sr.id)}>중단</button>
                 )}

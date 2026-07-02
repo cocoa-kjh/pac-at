@@ -84,3 +84,18 @@ def delete_series(series_id: int, db=Depends(get_db)):
 @router.get("/{series_id}/occurrences", response_model=list[schemas.ScheduleOut])
 def list_occurrences(series_id: int, db=Depends(get_db)):
     return db.query(Schedule).filter(Schedule.series_id == series_id).all()
+
+
+@router.post("/{series_id}/generate", response_model=list[schemas.ScheduleOut])
+def generate_now(series_id: int, db=Depends(get_db),
+                 yt=Depends(get_youtube_dep), engine=Depends(get_engine_dep)):
+    """lead_time_days 이내 대기 중인 회차를 주기 job을 기다리지 않고 즉시 생성한다."""
+    series = db.get(ScheduleSeries, series_id)
+    if not series:
+        raise HTTPException(404, "series not found")
+    if not series.active:
+        raise HTTPException(409, "series is not active")
+    if yt is None:
+        raise HTTPException(409, "YouTube not authenticated")
+    horizon = datetime.now(timezone.utc) + timedelta(days=series.lead_time_days)
+    return generate_due_occurrences(db, yt, engine, series, horizon)

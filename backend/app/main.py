@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -66,8 +67,19 @@ async def lifespan(app: FastAPI):
     scheduler = BackgroundScheduler(); scheduler.start()
     app.state.engine = ScheduleEngine(scheduler, obs, app.state.youtube, SessionLocal)
     app.state.engine.load_pending()
+    scheduler.add_job(_run_generate_pending_series, "interval", hours=6,
+                      id="series:generate_pending", next_run_time=datetime.now())
     yield
     scheduler.shutdown(wait=False)
+
+def _run_generate_pending_series():
+    """활성 반복 시리즈들의 lead_time 이내 회차를 생성한다 (신규 YouTube 이벤트 생성 포함)."""
+    from app.scheduler.series import generate_all_pending
+    db = SessionLocal()
+    try:
+        generate_all_pending(db, app.state.youtube, app.state.engine)
+    finally:
+        db.close()
 
 def _build_youtube_client():
     from app.routers.auth import load_credentials
@@ -83,9 +95,10 @@ app = FastAPI(title="YT Livestream Scheduler", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(localhost|192\.168\.\d+\.\d+):8101",
                    allow_methods=["*"], allow_headers=["*"])
 
-from app.routers import broadcasts, scenes, schedules, auth, status  # noqa: E402
+from app.routers import broadcasts, scenes, schedules, auth, status, series  # noqa: E402
 app.include_router(broadcasts.router)
 app.include_router(scenes.router)
 app.include_router(schedules.router)
 app.include_router(auth.router)
 app.include_router(status.router)
+app.include_router(series.router)

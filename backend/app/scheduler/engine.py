@@ -1,7 +1,6 @@
 from datetime import timedelta, timezone
 from app.models import Schedule
 from app.scheduler import steps
-from app.scheduler.recurrence import next_occurrence
 
 
 class ScheduleEngine:
@@ -32,27 +31,17 @@ class ScheduleEngine:
             db.close()
 
     def _run_go_complete(self, schedule_id):
-        """방송을 종료하고 송출을 중단합니다. 반복(RRULE)이 설정된 경우 다음 실행 일정을 자동 예약합니다."""
+        """방송을 종료하고 송출을 중단합니다.
+
+        반복 방송은 ScheduleSeries가 담당(app/scheduler/series.py) — 회차마다 새
+        Broadcast/Schedule을 미리 생성해두므로, 여기서는 해당 회차 종료 처리만 한다.
+        """
         db = self._session_factory()
         try:
             s = db.get(Schedule, schedule_id)
             steps.go_complete(db, self._obs, self._yt, s)
-            # 반복 설정(RRULE)이 있는 경우 다음 일정을 계산하여 재등록
-            if s.recurrence_rule:
-                nxt = next_occurrence(s.recurrence_rule, s.start_at)
-                if nxt:
-                    self._reschedule(db, s, nxt)
         finally:
             db.close()
-
-    def _reschedule(self, db, schedule, new_start):
-        """종료 시점에 맞춰 반복 일정의 다음 실행 시간을 계산해 DB에 등록하고 엔진에 예약을 갱신합니다."""
-        duration = schedule.end_at - schedule.start_at
-        schedule.start_at = new_start
-        schedule.end_at = new_start + duration
-        schedule.status = "pending"
-        db.commit()
-        self.register(schedule.id)
 
     def register(self, schedule_id):
         """주어진 스케줄 ID에 해당하는 방송 시작, 순차 장면 전환, 방송 종료 작업을 스케줄러(APScheduler)에 등록합니다."""

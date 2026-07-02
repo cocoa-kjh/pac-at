@@ -18,6 +18,12 @@ def _migrate(engine):
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE scene ADD COLUMN active BOOLEAN NOT NULL DEFAULT 1"))
 
+    if "schedule" in insp.get_table_names():
+        sched_cols = {c["name"] for c in insp.get_columns("schedule")}
+        if "series_id" not in sched_cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE schedule ADD COLUMN series_id INTEGER"))
+
 def init_db(engine):
     Base.metadata.create_all(bind=engine)
     _migrate(engine)

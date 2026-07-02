@@ -1,4 +1,4 @@
-import type { Broadcast, Scene, Schedule, Status, SchedulePreflight, BroadcastPreflight } from "../types";
+import type { Broadcast, Scene, Schedule, Status, SchedulePreflight, BroadcastPreflight, Series } from "../types";
 const BASE = `http://${window.location.hostname}:8100`;
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
@@ -34,4 +34,13 @@ export const api = {
   preflightBroadcast: (id: number) =>
     req<BroadcastPreflight>(`/broadcasts/${id}/preflight`),
   getStatus: () => req<Status>("/status"),
+  listSeries: () => req<Series[]>("/series"),
+  createSeries: (data: any) =>
+    req<Series>("/series", { method: "POST", body: JSON.stringify(data) }),
+  updateSeries: (id: number, data: any) =>
+    req<Series>(`/series/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteSeries: (id: number) =>
+    req<{ ok: boolean }>(`/series/${id}`, { method: "DELETE" }),
+  listSeriesOccurrences: (id: number) =>
+    req<Schedule[]>(`/series/${id}/occurrences`),
 };

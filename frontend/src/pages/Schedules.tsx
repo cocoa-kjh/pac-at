@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { Schedule, Scene, Broadcast, SequenceItem, SchedulePreflight } from "../types";
 import SequenceEditor from "../components/SequenceEditor";
+import SeriesPanel from "../components/SeriesPanel";
 
 function statusBadge(status: string) {
   const cls = ["pending","running","complete","error"].includes(status)
@@ -133,6 +134,10 @@ export default function Schedules() {
           )}
         </div>
       </div>
+
+      <hr className="divider" />
+
+      <SeriesPanel scenes={scenes} onOccurrenceCreated={reload} />
 
       <hr className="divider" />
 

@@ -10,7 +10,7 @@ describe("api client", () => {
   it("listBroadcasts hits /broadcasts", async () => {
     const data = await api.listBroadcasts();
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://localhost:8000/broadcasts", expect.any(Object));
+      "http://localhost:8100/broadcasts", expect.any(Object));
     expect(data[0].id).toBe(1);
   });
   it("createSchedule POSTs JSON", async () => {
@@ -22,19 +22,19 @@ describe("api client", () => {
   it("deleteSchedule uses DELETE", async () => {
     await api.deleteSchedule(7);
     const call = (globalThis.fetch as any).mock.calls.at(-1);
-    expect(call[0]).toBe("http://localhost:8000/schedules/7");
+    expect(call[0]).toBe("http://localhost:8100/schedules/7");
     expect(call[1].method).toBe("DELETE");
   });
   it("createBroadcast POSTs body", async () => {
     await api.createBroadcast({ title: "방송" } as any);
     const call = (globalThis.fetch as any).mock.calls.at(-1);
-    expect(call[0]).toBe("http://localhost:8000/broadcasts");
+    expect(call[0]).toBe("http://localhost:8100/broadcasts");
     expect(call[1].method).toBe("POST");
     expect(JSON.parse(call[1].body).title).toBe("방송");
   });
   it("getStatus hits /status", async () => {
     await api.getStatus();
     const call = (globalThis.fetch as any).mock.calls.at(-1);
-    expect(call[0]).toBe("http://localhost:8000/status");
+    expect(call[0]).toBe("http://localhost:8100/status");
   });
 });

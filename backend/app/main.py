@@ -80,7 +80,7 @@ def _build_youtube_client():
         db.close()
 
 app = FastAPI(title="YT Livestream Scheduler", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:8101"],
+app.add_middleware(CORSMiddleware, allow_origin_regex=r"http://(localhost|192\.168\.\d+\.\d+):8101",
                    allow_methods=["*"], allow_headers=["*"])
 
 from app.routers import broadcasts, scenes, schedules, auth, status  # noqa: E402

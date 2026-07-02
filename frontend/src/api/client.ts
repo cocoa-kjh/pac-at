@@ -1,5 +1,5 @@
 import type { Broadcast, Scene, Schedule, Status, SchedulePreflight, BroadcastPreflight } from "../types";
-const BASE = "http://localhost:8100";
+const BASE = `http://${window.location.hostname}:8100`;
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(BASE + path, {
